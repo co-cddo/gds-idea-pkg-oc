@@ -1,0 +1,18 @@
+# Approved skill sources for idea-oc.
+#
+# Changes here are the approval mechanism: raise a PR, get CODEOWNERS review,
+# and users receive the change when they upgrade idea-oc.
+#
+# Each [[source]] sets exactly one of:
+#   discover = "<folder>"      install every subfolder containing SKILL.md
+#   skills   = ["<path>", ...] install named skills (a folder or a SKILL.md file)
+#
+# ref = "latest" follows the newest release of the repo. Set a tag or commit
+# SHA to pin a source.
+
+allowed_owners = ["co-cddo"]
+
+[[source]]
+repo = "co-cddo/gds-idea-ai-reviewer"
+discover = "src/ai_reviewer/skills"
+ref = "latest"
