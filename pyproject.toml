@@ -1,13 +1,20 @@
 [project]
 name = "gds-idea-pkg-oc"
-description = "TODO: add description"
+description = "Sync approved OpenCode agent skills to a developer's machine"
 readme = "README.md"
 authors = [
     { name = "David Gillespie", email = "david.gillespie@digital.cabinet-office.gov.uk" }
 ]
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "click>=8.0",
+    "httpx>=0.27",
+    "pydantic>=2.0",
+]
 dynamic = ["version"]
+
+[project.scripts]
+idea-oc = "idea_oc.cli:cli"
 
 [build-system]
 requires = ["hatchling", "hatch-vcs"]
@@ -17,21 +24,21 @@ build-backend = "hatchling.build"
 source = "vcs"
 
 [tool.hatch.build.hooks.vcs]
-version-file = "src/oc/_version.py"
+version-file = "src/idea_oc/_version.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/oc"]
+packages = ["src/idea_oc"]
 
 [tool.ruff]
 line-length = 120
 target-version = "py313"
-exclude = ["src/oc/_version.py"]
+exclude = ["src/idea_oc/_version.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["oc"]
+known-first-party = ["idea_oc"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -54,5 +61,6 @@ LICENCE = "sha256:21cc325b3181cb748845827425d37ce04b3dc563835bbf50fafbc56a5eb68c
 dev = [
     "pre-commit>=4.6.2",
     "pytest>=9.0.0",
+    "pytest-httpx>=0.34",
     "ruff>=0.14.0",
 ]
