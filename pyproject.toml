@@ -66,3 +66,6 @@ dev = [
     "pytest-httpx>=0.34",
     "ruff>=0.14.0",
 ]
+docs = [
+    "mkdocs-material>=9.0",
+]

@@ -1,47 +1,33 @@
-# gds-idea-pkg-oc
+# idea-oc
 
-_Brief description of your package._
+Installs the GDS IDEA team's approved [OpenCode](https://opencode.ai) agent skills on your machine
+and registers them with OpenCode, so everyone works from the same set.
 
-## Usage
+**Documentation: <https://co-cddo.github.io/gds-idea-pkg-oc/>**
 
-`idea-oc sync` has two independent stages. Run both, or either on its own:
+## Install
 
 ```bash
-idea-oc sync            # skills, then config
-idea-oc sync skills     # install the approved skills (needs the network)
-idea-oc sync config     # update your OpenCode config (works offline)
+idea-tools install gds-idea-pkg-oc
+idea-oc sync
 ```
 
-`idea-oc status [skills|config]` checks the same stages without changing anything and
-exits 1 if a sync is needed.
+New to OpenCode? Start with the [setup guide](docs/guides/setup.md).
 
-### Why sync skills does not edit your config
+## Documentation
 
-OpenCode only loads skills from folders it has been told about. idea-oc installs team
-skills into its own folder (`~/.local/share/idea-oc/skills`), separate from your personal
-skills, and OpenCode finds that folder through the `skills.paths` entry in your
-`opencode.json` or `opencode.jsonc`.
+The docs live in [`docs/`](docs/) and are published with mkdocs.
 
-That entry is a change to a file you own, so it belongs to the config stage: `idea-oc sync
-config` shows exactly what it will change, asks you yes or no, and saves a backup first.
-`idea-oc sync skills` never writes to your config, so it is safe to run from hooks and CI.
+| | |
+|---|---|
+| [Set up OpenCode](docs/guides/setup.md) | From install to running against Bedrock |
+| [Plugins](docs/guides/plugins.md) | The required plugin and the recommended ones |
+| [sync](docs/commands/sync.md), [status](docs/commands/status.md), [list](docs/commands/list.md) | The commands |
+| [Preferred config](docs/reference/preferred-config.md) | The team's OpenCode config and how permission rules work |
 
-If you only run `sync skills`, the skills are installed but OpenCode will not see them until
-you run `idea-oc sync config` once. Plain `idea-oc sync` runs both stages for you.
+The preferred config itself is [`src/idea_oc/opencode.jsonc`](src/idea_oc/opencode.jsonc).
 
-## Preferred OpenCode config
-
-The team's preferred OpenCode configuration is kept in
-[`src/idea_oc/opencode.jsonc`](src/idea_oc/opencode.jsonc): the Bedrock provider and model, the
-recommended plugins, and the `permission` rules that guard commands such as `gh pr merge`,
-`git push` and `rm -rf`. Use it as the reference when setting up OpenCode, or compare it with
-your own `~/.config/opencode/opencode.jsonc`.
-
-Permission rules are read top to bottom and the **last matching rule wins**, so the order of the
-`bash` rules matters: keep the `"*"` catch-all first and put more specific rules below the
-general ones they refine.
-
-## Prerequisites
+## Prerequisites for development
 
 - [uv](https://docs.astral.sh/uv/) for Python package management
 - [git](https://git-scm.com/)
@@ -86,6 +72,15 @@ uv run pytest
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 ```
+
+### Working on the docs
+
+```bash
+uv sync --group docs
+uv run mkdocs serve
+```
+
+`uv run mkdocs build --strict` fails on broken links, as the docs workflow does on pull requests.
 
 ### Pre-commit hooks
 

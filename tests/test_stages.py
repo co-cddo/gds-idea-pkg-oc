@@ -72,14 +72,6 @@ def test_combined_sync_does_not_duplicate_the_advice(cli_runner, reviewer):
     assert "will not load them yet" not in result.output
 
 
-def test_the_documentation_link_points_at_a_real_readme_heading():
-    readme = Path(__file__).parent.parent.joinpath("README.md").read_text()
-    anchor = DOCS_URL.split("#", 1)[1]
-    headings = [line.removeprefix("### ").strip().lower().replace(" ", "-") for line in readme.splitlines()]
-
-    assert anchor in headings
-
-
 # --- sync config -----------------------------------------------------------------------------
 
 

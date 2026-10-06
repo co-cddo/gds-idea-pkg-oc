@@ -25,7 +25,8 @@ from idea_oc.sync import Action, SourcePlan, SyncResult, apply_plans, plan_regis
 from idea_oc.version import check_for_update
 
 STAGES = ("skills", "config")
-DOCS_URL = "https://github.com/co-cddo/gds-idea-pkg-oc#why-sync-skills-does-not-edit-your-config"
+DOCS_SITE = "https://co-cddo.github.io/gds-idea-pkg-oc/"
+DOCS_URL = f"{DOCS_SITE}commands/sync/#why-sync-skills-does-not-edit-your-config"
 _SYMBOLS = {Action.ADDED: "+", Action.UPDATED: "~"}
 
 
