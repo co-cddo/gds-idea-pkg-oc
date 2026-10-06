@@ -24,7 +24,7 @@ def config_file():
 
 
 @pytest.fixture
-def reviewer(github):
+def reviewer(github, reviewer_only):
     files = {f"{ROOT}/{n}/SKILL.md": skill_md(n) for n in ("cdk-review", "readme-review")}
     files[f"{ROOT}/__init__.py"] = ""
     github.add_repo(REVIEWER, files, tag="v0.1.22")

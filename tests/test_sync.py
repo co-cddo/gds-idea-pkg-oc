@@ -5,6 +5,7 @@ import pytest
 from idea_oc.github import GitHubClient
 from idea_oc.models import Registry, Source
 from idea_oc.planner import PlanError
+from idea_oc.registry import load_registry
 from idea_oc.store import Store, default_store_dir
 from idea_oc.sync import Action, apply_plans, plan_registry
 from tests.conftest import skill_md
@@ -226,3 +227,43 @@ def test_failed_install_keeps_the_previous_version(github, client, store, monkey
 
     assert not result.ok
     assert "Body" in (store.root / "a" / "SKILL.md").read_text()
+
+
+def test_the_bundled_registry_plans_cleanly_with_unique_skill_names(github, client):
+    """Every approved source together must install without a name clash."""
+    github.add_repo(
+        "co-cddo/gds-idea-ai-reviewer",
+        {f"src/ai_reviewer/skills/{n}/SKILL.md": skill_md(n) for n in ("cdk-review", "readme-review")},
+    )
+    github.add_repo("co-cddo/gds-idea-app-kit", {"skills/idea-app-usage/SKILL.md": skill_md("idea-app-usage")})
+    github.add_repo("co-cddo/gds-idea-gh-kit", {"skills/idea-gh-usage/SKILL.md": skill_md("idea-gh-usage")})
+
+    plans = plan_registry(client, load_registry())
+
+    assert all(plan.error is None for plan in plans)
+    names = sorted(skill.name for plan in plans for skill in plan.skills)
+    assert names == ["cdk-review", "idea-app-usage", "idea-gh-usage", "readme-review"]
+
+
+def test_a_kit_release_without_its_skill_fails_that_source_only(github, client, store):
+    """Before a kit's release contains the skill, syncing reports it and still installs the others."""
+    github.add_repo("co-cddo/gds-idea-ai-reviewer", {"src/ai_reviewer/skills/a/SKILL.md": skill_md("a")})
+    github.add_repo("co-cddo/gds-idea-app-kit", {"README.md": "no skills folder in this release yet"})
+    github.add_repo("co-cddo/gds-idea-gh-kit", {"skills/idea-gh-usage/SKILL.md": skill_md("idea-gh-usage")})
+
+    result = apply_plans(client, store, plan_registry(client, load_registry()))
+
+    assert not result.ok
+    assert any("gds-idea-app-kit" in error and "does not exist" in error for error in result.errors)
+    assert (store.root / "a" / "SKILL.md").exists()
+    assert (store.root / "idea-gh-usage" / "SKILL.md").exists()
+
+
+def test_a_source_error_starts_with_its_repo_without_repeating_it(github, client):
+    github.add_repo(KIT, {"README.md": "no skills here"})
+    planner_error = plan_registry(client, registry(Source(repo=KIT, skills=["skills/gone"])))[0]
+    github_error = plan_registry(client, registry(Source(repo="co-cddo/not-there", skills=["skills/x"])))[0]
+
+    assert planner_error.message == f"{KIT}: 'skills/gone' does not exist"
+    assert github_error.message.startswith("co-cddo/not-there: Not found on GitHub")
+    assert not github_error.message.startswith("co-cddo/not-there: co-cddo/not-there")

@@ -30,6 +30,26 @@ def test_bundled_registry_discovers_ai_reviewer_skills():
     assert reviewer.ref == "latest"
 
 
+def test_bundled_registry_lists_the_teams_own_tool_skills_by_name():
+    registry = load_registry()
+
+    named = {s.repo: s.skills for s in registry.source if s.skills}
+    assert named == {
+        "co-cddo/gds-idea-app-kit": ["skills/idea-app-usage"],
+        "co-cddo/gds-idea-gh-kit": ["skills/idea-gh-usage"],
+    }
+
+
+def test_bundled_registry_follows_releases_rather_than_branches():
+    assert {s.ref for s in load_registry().source} == {"latest"}
+
+
+def test_bundled_registry_has_no_duplicate_sources():
+    repos = [(s.repo, s.discover, tuple(s.skills or ())) for s in load_registry().source]
+
+    assert len(repos) == len(set(repos))
+
+
 def test_multiple_skills_from_one_repo(write_registry):
     path = write_registry(
         """

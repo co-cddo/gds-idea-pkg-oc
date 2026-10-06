@@ -37,6 +37,21 @@ def cli_runner() -> CliRunner:
     return CliRunner()
 
 
+@pytest.fixture
+def reviewer_only(monkeypatch, tmp_path):
+    """Make the CLI use a registry with just the reviewer source.
+
+    Command tests are about how sync, status and list behave, not about which sources are approved.
+    Using the bundled registry would make them break every time a source is added.
+    """
+    from idea_oc import commands
+
+    path = tmp_path / "reviewer-registry.toml"
+    path.write_text('[[source]]\nrepo = "co-cddo/gds-idea-ai-reviewer"\ndiscover = "src/ai_reviewer/skills"\n')
+    load = commands.load_registry
+    monkeypatch.setattr(commands, "load_registry", lambda given=None: load(given or path))
+
+
 class FakeGitHub:
     """An in-memory GitHub serving the few endpoints idea-oc uses, and recording requests."""
 
