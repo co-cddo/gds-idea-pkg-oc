@@ -1,0 +1,40 @@
+site_name: idea-oc
+site_description: Sync approved OpenCode agent skills and keep your OpenCode setup in step with the team
+site_url: https://co-cddo.github.io/gds-idea-pkg-oc/
+repo_url: https://github.com/co-cddo/gds-idea-pkg-oc
+repo_name: co-cddo/gds-idea-pkg-oc
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+    - navigation.footer
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Set up OpenCode: guides/setup.md
+      - Plugins: guides/plugins.md
+  - Commands:
+      - sync: commands/sync.md
+      - status: commands/status.md
+      - list: commands/list.md
+  - Reference:
+      - Preferred config: reference/preferred-config.md
+      - Environment variables: reference/environment.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - toc:
+      permalink: true
+  - tables

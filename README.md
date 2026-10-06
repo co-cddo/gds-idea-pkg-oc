@@ -1,8 +1,34 @@
-# gds-idea-pkg-oc
+# idea-oc
 
-_Brief description of your package._
+Installs the GDS IDEA team's approved [OpenCode](https://opencode.ai) agent skills on your machine
+and checks your OpenCode config against the team's preferred setup, so everyone works from the same
+set.
 
-## Prerequisites
+**Documentation: <https://co-cddo.github.io/gds-idea-pkg-oc/>**
+
+## Install
+
+```bash
+idea-tools install gds-idea-pkg-oc
+idea-oc sync
+```
+
+New to OpenCode? Start with the [setup guide](docs/guides/setup.md).
+
+## Documentation
+
+The docs live in [`docs/`](docs/) and are published with mkdocs.
+
+| | |
+|---|---|
+| [Set up OpenCode](docs/guides/setup.md) | From install to running against Bedrock |
+| [Plugins](docs/guides/plugins.md) | The required plugin and the recommended ones |
+| [sync](docs/commands/sync.md), [status](docs/commands/status.md), [list](docs/commands/list.md) | The commands |
+| [Preferred config](docs/reference/preferred-config.md) | The team's OpenCode config and how permission rules work |
+
+The preferred config itself is [`src/idea_oc/opencode.jsonc`](src/idea_oc/opencode.jsonc).
+
+## Prerequisites for development
 
 - [uv](https://docs.astral.sh/uv/) for Python package management
 - [git](https://git-scm.com/)
@@ -47,6 +73,15 @@ uv run pytest
 uv run ruff check src/ tests/
 uv run ruff format --check src/ tests/
 ```
+
+### Working on the docs
+
+```bash
+uv sync --group docs
+uv run mkdocs serve
+```
+
+`uv run mkdocs build --strict` fails on broken links, as the docs workflow does on pull requests.
 
 ### Pre-commit hooks
 
