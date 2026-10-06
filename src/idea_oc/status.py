@@ -160,7 +160,7 @@ def check_skills(
     plans = plan_registry(client, registry)
     skills = [_skill_status(store, skill) for plan in plans for skill in plan.skills]
     names = {s.name for s in skills} | set(store.installed())
-    unchecked = [f"{p.source.repo}: {p.error}" for p in plans if p.error]
+    unchecked = [p.message for p in plans if p.message]
 
     return SkillsReport(
         skills=skills,

@@ -60,7 +60,7 @@ def load_registry_or_fail(path: Path | None) -> Registry:
 def _echo_plans(plans: list[SourcePlan]) -> None:
     for plan in plans:
         if plan.error:
-            click.echo(f"  ! {plan.source.repo}: {plan.error}", err=True)
+            click.echo(f"  ! {plan.message}", err=True)
             continue
         resolved = plan.resolved
         note = f"  (no releases, using {resolved.name})" if resolved.floating else f"  {resolved.name}"
