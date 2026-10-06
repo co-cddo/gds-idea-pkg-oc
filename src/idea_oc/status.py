@@ -58,20 +58,16 @@ class Shadow:
 
 
 @dataclass
-class StatusReport:
-    """Everything ``idea-oc status`` reports.
+class SkillsReport:
+    """What ``idea-oc status skills`` reports.
 
     Attributes:
-        config: Whether the store is registered, or None if the config could not be read.
-        config_error: Why the config could not be read.
         skills: Status of every approved skill that could be checked.
         stale: Store folders no source provides any more (only known when every source was checked).
         shadowed: Personal skills overridden by team skills.
         unchecked: Sources that could not be reached, so were not compared.
     """
 
-    config: ConfigState | None
-    config_error: str | None = None
     skills: list[SkillStatus] = field(default_factory=list)
     stale: list[str] = field(default_factory=list)
     shadowed: list[Shadow] = field(default_factory=list)
@@ -79,9 +75,26 @@ class StatusReport:
 
     @property
     def problems(self) -> bool:
-        """True when something needs ``idea-oc sync``."""
-        config_ok = self.config is ConfigState.REGISTERED
-        return not config_ok or any(not s.ok for s in self.skills) or bool(self.stale)
+        """True when something needs ``idea-oc sync skills``."""
+        return any(not s.ok for s in self.skills) or bool(self.stale)
+
+
+@dataclass
+class ConfigReport:
+    """What ``idea-oc status config`` reports.
+
+    Attributes:
+        state: Whether the store is registered, or None if the config could not be read.
+        error: Why the config could not be read.
+    """
+
+    state: ConfigState | None
+    error: str | None = None
+
+    @property
+    def problems(self) -> bool:
+        """True when something needs ``idea-oc sync config``."""
+        return self.state is not ConfigState.REGISTERED
 
 
 def personal_skill_dirs(config_path: Path) -> list[Path]:
@@ -126,33 +139,33 @@ def _skill_status(store: Store, skill: PlannedSkill) -> SkillStatus:
     return SkillStatus(skill.name, installed, store.diff(skill))
 
 
-def check_status(
+def check_skills(
     client: GitHubClient,
     registry: Registry,
     store: Store,
-    config_path: Path,
     personal_dirs: list[Path],
-) -> StatusReport:
-    """Build a status report. Downloads nothing: it reads trees and hashes local files.
+) -> SkillsReport:
+    """Compare the store with the registry. Downloads nothing: it reads trees and hashes local files.
 
     Raises:
         PlanError: If two sources provide a skill with the same name.
     """
-    try:
-        config, config_error = skills_path_state(config_path, store.root), None
-    except ConfigError as e:
-        config, config_error = None, str(e)
-
     plans = plan_registry(client, registry)
     skills = [_skill_status(store, skill) for plan in plans for skill in plan.skills]
     names = {s.name for s in skills} | set(store.installed())
     unchecked = [f"{p.source.repo}: {p.error}" for p in plans if p.error]
 
-    return StatusReport(
-        config=config,
-        config_error=config_error,
+    return SkillsReport(
         skills=skills,
         stale=[] if unchecked else store.stale({s.name for s in skills}),
         shadowed=find_shadowed(names, personal_dirs, ignore=store.root),
         unchecked=unchecked,
     )
+
+
+def check_config(config_path: Path, store_dir: Path) -> ConfigReport:
+    """Check the OpenCode config. Works offline."""
+    try:
+        return ConfigReport(skills_path_state(config_path, store_dir))
+    except ConfigError as e:
+        return ConfigReport(None, str(e))

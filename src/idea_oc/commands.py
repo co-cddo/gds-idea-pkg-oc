@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import click
@@ -18,11 +19,13 @@ from idea_oc.opencode_config import (
 )
 from idea_oc.planner import PlanError
 from idea_oc.registry import RegistryError, load_registry
-from idea_oc.status import StatusReport, check_status, personal_skill_dirs
+from idea_oc.status import ConfigReport, SkillsReport, check_config, check_skills, personal_skill_dirs
 from idea_oc.store import Store, default_store_dir
 from idea_oc.sync import Action, SourcePlan, SyncResult, apply_plans, plan_registry
 from idea_oc.version import check_for_update
 
+STAGES = ("skills", "config")
+DOCS_URL = "https://github.com/co-cddo/gds-idea-pkg-oc#why-sync-skills-does-not-edit-your-config"
 _SYMBOLS = {Action.ADDED: "+", Action.UPDATED: "~"}
 
 
@@ -105,9 +108,28 @@ def _offer_registration(store_dir: Path, *, yes: bool) -> None:
     click.echo("Registered.")
 
 
-def run_sync(*, registry_path: Path | None, dry_run: bool, prune: bool, yes: bool) -> None:
-    """Install the registry's skills into the store and register the store with OpenCode."""
-    check_for_update()
+def _selected(stage: str | None) -> tuple[str, ...]:
+    """The stages to run: the one named, or all of them."""
+    return STAGES if stage is None else (stage,)
+
+
+def _heading(name: str, stages: tuple[str, ...]) -> None:
+    """Label a stage's output, but only when more than one stage is running."""
+    if len(stages) > 1:
+        click.echo(f"\n--- {name} ---")
+
+
+def _guarded(stage: Callable[[], bool]) -> bool:
+    """Run a stage so that its fatal errors are reported without stopping the other stage."""
+    try:
+        return stage()
+    except click.ClickException as e:
+        e.show()
+        return False
+
+
+def _sync_skills(*, registry_path: Path | None, dry_run: bool, prune: bool, advise_config: bool) -> bool:
+    """Install the registry's skills into the store. Never touches the OpenCode config."""
     registry = load_registry_or_fail(registry_path)
     store = Store(default_store_dir())
 
@@ -126,34 +148,82 @@ def run_sync(*, registry_path: Path | None, dry_run: bool, prune: bool, yes: boo
     _echo_changes(result)
     _echo_summary(result, dry_run=dry_run)
 
-    if not dry_run and result.outcomes:
-        _offer_registration(store.root, yes=yes)
     if not dry_run and (result.count(Action.ADDED) or result.count(Action.UPDATED)):
         click.echo("Restart OpenCode to pick up the changes.")
+    if advise_config and result.outcomes and _registration_needed(store.root):
+        _echo_registration_advice()
 
     if not result.ok:
         click.echo("\nSome skills could not be synced:", err=True)
         for error in result.errors:
             click.echo(f"  {error}", err=True)
+    return result.ok
+
+
+def _echo_registration_advice() -> None:
+    click.echo(
+        "\nThese skills are installed, but OpenCode will not load them yet.\n"
+        'OpenCode only loads skills from folders listed under "skills.paths" in your config, and\n'
+        "idea-oc keeps that edit as a separate step so it can show you the change and ask first.\n"
+        "  Run:  idea-oc sync config\n"
+        f"  Why:  {DOCS_URL}"
+    )
+
+
+def _registration_needed(store_dir: Path) -> bool:
+    try:
+        return skills_path_state(default_config_path(), store_dir) is not ConfigState.REGISTERED
+    except ConfigError:
+        return True
+
+
+def _sync_config(*, dry_run: bool, yes: bool) -> bool:
+    """Make sure OpenCode is told about the store. Works offline and never touches the store."""
+    store_dir = default_store_dir()
+    if not _registration_needed(store_dir):
+        click.echo("Config is up to date.")
+    elif dry_run:
+        click.echo(f"Would ask to register {_tilde(store_dir)} in {_tilde(default_config_path())}.")
+    else:
+        _offer_registration(store_dir, yes=yes)
+    return True
+
+
+def run_sync(*, registry_path: Path | None, stage: str | None, dry_run: bool, prune: bool, yes: bool) -> None:
+    """Run the skills stage, the config stage, or both. Exits 1 if any stage failed."""
+    check_for_update()
+    stages = _selected(stage)
+    outcomes = []
+
+    if "skills" in stages:
+        _heading("skills", stages)
+        outcomes.append(
+            _guarded(
+                lambda: _sync_skills(
+                    registry_path=registry_path, dry_run=dry_run, prune=prune, advise_config="config" not in stages
+                )
+            )
+        )
+    if "config" in stages:
+        _heading("config", stages)
+        outcomes.append(_guarded(lambda: _sync_config(dry_run=dry_run, yes=yes)))
+
+    if not all(outcomes):
         raise click.exceptions.Exit(1)
 
 
-def _config_line(report: StatusReport, config_path: Path) -> tuple[bool, str]:
-    """Whether the config is fine, and the line describing it."""
-    if report.config_error:
-        return False, f"could not be read: {report.config_error}"
-    if report.config is ConfigState.REGISTERED:
-        return True, f"ok (skills.paths registered in {_tilde(config_path)})"
-    return False, f"skills.paths is not registered in {_tilde(config_path)} (run: idea-oc sync)"
+def _config_line(report: ConfigReport, config_path: Path) -> str:
+    if report.error:
+        return f"could not be read: {report.error}"
+    if report.problems:
+        return f"skills.paths is not registered in {_tilde(config_path)} (run: idea-oc sync config)"
+    return f"ok (skills.paths registered in {_tilde(config_path)})"
 
 
-def _echo_status(report: StatusReport, config_path: Path, *, quiet: bool) -> None:
+def _echo_skills_status(report: SkillsReport, *, quiet: bool) -> None:
     def say(line: str = "", *, problem: bool = False) -> None:
         if problem or not quiet:
             click.echo(line)
-
-    config_ok, config_line = _config_line(report, config_path)
-    say(f"Config:  {config_line}", problem=not config_ok)
 
     drifted = [s for s in report.skills if not s.ok]
     say(f"Skills:  {len(report.skills)} approved, {len(drifted)} need syncing", problem=bool(drifted))
@@ -161,7 +231,7 @@ def _echo_status(report: StatusReport, config_path: Path, *, quiet: bool) -> Non
         say(f"  {skill.name:<24} {skill.detail}", problem=True)
 
     if report.stale:
-        say("Stale:   no longer approved (run: idea-oc sync)", problem=True)
+        say("Stale:   no longer approved (run: idea-oc sync skills)", problem=True)
         for name in report.stale:
             say(f"  {name}", problem=True)
 
@@ -174,21 +244,42 @@ def _echo_status(report: StatusReport, config_path: Path, *, quiet: bool) -> Non
         click.echo(f"Could not check upstream, skipped: {line}", err=True)
 
 
-def run_status(*, registry_path: Path | None, quiet: bool) -> None:
-    """Report drift between the store, the registry and the OpenCode config. Exits 1 if a sync is needed."""
-    check_for_update(quiet=quiet)
+def _status_skills(*, registry_path: Path | None, quiet: bool) -> bool:
+    """Report skills drift. Returns True if everything is in order."""
     registry = load_registry_or_fail(registry_path)
     store = Store(default_store_dir())
-    config_path = default_config_path()
 
     with GitHubClient(token=get_token()) as client:
         try:
-            report = check_status(client, registry, store, config_path, personal_skill_dirs(config_path))
+            report = check_skills(client, registry, store, personal_skill_dirs(default_config_path()))
         except PlanError as e:
             raise click.ClickException(str(e)) from e
 
-    _echo_status(report, config_path, quiet=quiet)
-    if report.problems:
+    _echo_skills_status(report, quiet=quiet)
+    return not report.problems
+
+
+def _status_config(*, quiet: bool) -> bool:
+    """Report config drift. Returns True if everything is in order. Works offline."""
+    config_path = default_config_path()
+    report = check_config(config_path, default_store_dir())
+    if report.problems or not quiet:
+        click.echo(f"Config:  {_config_line(report, config_path)}")
+    return not report.problems
+
+
+def run_status(*, registry_path: Path | None, stage: str | None, quiet: bool) -> None:
+    """Report drift for the skills stage, the config stage, or both. Exits 1 if a sync is needed."""
+    check_for_update(quiet=quiet)
+    stages = _selected(stage)
+    outcomes = []
+
+    if "skills" in stages:
+        outcomes.append(_guarded(lambda: _status_skills(registry_path=registry_path, quiet=quiet)))
+    if "config" in stages:
+        outcomes.append(_guarded(lambda: _status_config(quiet=quiet)))
+
+    if not all(outcomes):
         raise click.exceptions.Exit(1)
 
 

@@ -2,6 +2,33 @@
 
 _Brief description of your package._
 
+## Usage
+
+`idea-oc sync` has two independent stages. Run both, or either on its own:
+
+```bash
+idea-oc sync            # skills, then config
+idea-oc sync skills     # install the approved skills (needs the network)
+idea-oc sync config     # update your OpenCode config (works offline)
+```
+
+`idea-oc status [skills|config]` checks the same stages without changing anything and
+exits 1 if a sync is needed.
+
+### Why sync skills does not edit your config
+
+OpenCode only loads skills from folders it has been told about. idea-oc installs team
+skills into its own folder (`~/.local/share/idea-oc/skills`), separate from your personal
+skills, and OpenCode finds that folder through the `skills.paths` entry in your
+`opencode.json` or `opencode.jsonc`.
+
+That entry is a change to a file you own, so it belongs to the config stage: `idea-oc sync
+config` shows exactly what it will change, asks you yes or no, and saves a backup first.
+`idea-oc sync skills` never writes to your config, so it is safe to run from hooks and CI.
+
+If you only run `sync skills`, the skills are installed but OpenCode will not see them until
+you run `idea-oc sync config` once. Plain `idea-oc sync` runs both stages for you.
+
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) for Python package management

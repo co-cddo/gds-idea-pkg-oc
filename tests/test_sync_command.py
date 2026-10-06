@@ -100,7 +100,8 @@ def test_dry_run_writes_nothing_and_does_not_prompt(cli_runner, reviewer, store_
     assert result.exit_code == 0
     assert "Would install to" in result.output
     assert "Dry run, nothing written: 2 installed" in result.output
-    assert "register" not in result.output.lower()
+    assert "Would ask to register" in result.output
+    assert "Registered." not in result.output
     assert not store_dir.exists()
     assert not config_file.exists()
 
