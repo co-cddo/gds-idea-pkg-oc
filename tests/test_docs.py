@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from idea_oc.commands import DOCS_SITE, DOCS_URL
+from idea_oc.docs import ALL_LINKS, DOCS_SITE
 
 ROOT = Path(__file__).parent.parent
 DOCS = ROOT / "docs"
@@ -33,17 +33,19 @@ def page_for(url_path: str) -> Path:
 def printed_urls() -> list[str]:
     """Every link to the docs site that users see.
 
-    That is the links written out in the Python source and the bundled config, plus ``DOCS_URL``,
-    which the source builds from parts and so cannot be found by reading the text.
+    That is the links written out in the Python source and the bundled config, plus the ones in
+    ``idea_oc.docs``, which the source builds from parts and so cannot be found by reading the text.
     """
     pattern = re.escape(DOCS_SITE) + r"[^\s\"')]*"
     files = [*SOURCE.rglob("*.py"), SOURCE / "opencode.jsonc"]
-    return sorted({DOCS_URL, *(url for file in files for url in re.findall(pattern, file.read_text()))})
+    return sorted({*ALL_LINKS, *(url for file in files for url in re.findall(pattern, file.read_text()))})
 
 
-def test_the_link_printed_by_sync_skills_is_among_those_checked():
-    assert DOCS_URL in printed_urls()
-    assert any(url.endswith("/guides/setup/") for url in printed_urls())  # the config header's links are found too
+def test_every_link_idea_oc_prints_is_among_those_checked():
+    checked = printed_urls()
+
+    assert set(ALL_LINKS) <= set(checked)
+    assert any(url.endswith("/guides/setup/") for url in checked)  # the config header's links are found too
 
 
 @pytest.mark.parametrize("url", printed_urls())

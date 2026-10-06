@@ -5,6 +5,9 @@ change plugins: it only checks which of the plugins below are listed and tells y
 
 Add plugins to your config file directly. OpenCode installs them the next time it starts.
 
+`idea-oc sync config` and `idea-oc status config` print what is missing, with a link to the right
+section below. The advice never changes the exit code, so it will not fail a hook or a CI check.
+
 ## The required plugin
 
 OpenCode can sometimes run scripts that read, and potentially write, to resources such as S3

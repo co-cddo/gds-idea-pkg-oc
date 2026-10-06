@@ -32,6 +32,9 @@ a hook or CI.
 - Whether the config can be read.
 - **Heads up** lines for team permission rules that a rule in your own config stops from working.
   These are shown for information and do not make `status` fail.
+- **Plugin advice**: which of the [recommended plugins](../guides/plugins.md) your config does not
+  list, and a warning if `opencode-snip` is listed without the `snip` program. This is advice only.
+  It never makes `status` fail, and `--quiet` leaves it out.
 
 ## Options
 

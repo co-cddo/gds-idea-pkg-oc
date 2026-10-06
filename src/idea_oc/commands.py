@@ -7,6 +7,7 @@ from pathlib import Path
 
 import click
 
+from idea_oc.docs import PLUGINS_RECOMMENDED_URL, PLUGINS_REQUIRED_URL, PLUGINS_SNIP_URL, SYNC_WHY_URL
 from idea_oc.github import GitHubClient, get_token
 from idea_oc.models import Registry
 from idea_oc.opencode_config import (
@@ -23,6 +24,7 @@ from idea_oc.opencode_config import (
     write_proposal,
 )
 from idea_oc.planner import PlanError
+from idea_oc.plugins import SNIP_INSTALL, SNIP_PLUGIN, SNIP_PROGRAM, PluginReport, check_plugins
 from idea_oc.registry import RegistryError, load_registry
 from idea_oc.status import SkillsReport, check_config, check_skills, personal_skill_dirs
 from idea_oc.store import Store, default_store_dir
@@ -31,8 +33,7 @@ from idea_oc.team_config import Change, describe
 from idea_oc.version import check_for_update
 
 STAGES = ("skills", "config")
-DOCS_SITE = "https://co-cddo.github.io/gds-idea-pkg-oc/"
-DOCS_URL = f"{DOCS_SITE}commands/sync/#why-sync-skills-does-not-edit-your-config"
+DOCS_URL = SYNC_WHY_URL
 _SYMBOLS = {Action.ADDED: "+", Action.UPDATED: "~"}
 
 
@@ -169,6 +170,32 @@ def _echo_config_extras(warnings: list[str], notes: list[str]) -> None:
         click.echo(f"Note: {line}")
 
 
+def _echo_plugin_advice(report: PluginReport) -> None:
+    """Say which recommended plugins are missing. This is advice only: idea-oc never changes plugins."""
+    if report.error:
+        return
+    if report.all_good:
+        click.echo("Plugins: all the recommended plugins are listed.")
+        return
+
+    missing = [p for p in report.plugins if not p.listed]
+    if missing:
+        click.echo("Plugins (idea-oc does not install or change these):")
+        width = max(len(p.info.identity) for p in missing)
+        for plugin in sorted(missing, key=lambda p: not p.info.required):
+            label = "missing (REQUIRED)" if plugin.info.required else "missing"
+            click.echo(f"  {label:<18}  {plugin.info.identity:<{width}}  {plugin.info.why}")
+        if report.missing_required:
+            click.echo(f"  How to add the required plugin: {PLUGINS_REQUIRED_URL}")
+        if report.missing_recommended:
+            click.echo(f"  About the recommended plugins: {PLUGINS_RECOMMENDED_URL}")
+    if report.snip_missing:
+        click.echo(
+            f"Heads up: {SNIP_PLUGIN} is listed but the '{SNIP_PROGRAM}' program is not installed, so it does nothing."
+        )
+        click.echo(f"  Install it with: {SNIP_INSTALL}\n  More: {PLUGINS_SNIP_URL}")
+
+
 def _confirm(prompt: str, *, yes: bool) -> bool:
     """Ask yes or no, defaulting to no. No terminal to ask on counts as no."""
     if yes:
@@ -206,14 +233,26 @@ def _accept(config: ConfigPlan, config_path: Path) -> bool:
 
 
 def _sync_config(*, dry_run: bool, yes: bool) -> bool:
-    """Bring the user's OpenCode config in line with the team's preferred one. Offline; never touches the store."""
-    store_dir = default_store_dir()
+    """Bring the user's OpenCode config in line with the team's preferred one, then advise on plugins.
+
+    Works offline and never touches the store.
+    """
     config_path = default_config_path()
+    readable = _apply_config(config_path, dry_run=dry_run, yes=yes)
+    if readable:
+        click.echo()
+        _echo_plugin_advice(check_plugins(config_path))
+    return True
+
+
+def _apply_config(config_path: Path, *, dry_run: bool, yes: bool) -> bool:
+    """Show, and with approval make, the config changes. Returns False if the config could not be read."""
+    store_dir = default_store_dir()
     try:
         config = plan_config(config_path, store_dir)
     except ConfigError as e:
         click.echo(f"{e}\nAdd this yourself to register the skills folder:\n{manual_snippet(store_dir)}", err=True)
-        return True
+        return False
 
     plan = config.plan
     if not plan.pending:
@@ -305,7 +344,10 @@ def _status_skills(*, registry_path: Path | None, quiet: bool) -> bool:
 
 
 def _status_config(*, quiet: bool) -> bool:
-    """Report how the config differs from the team's preferred one. Returns True if it matches. Offline."""
+    """Report how the config differs from the team's preferred one. Returns True if it matches. Offline.
+
+    Plugin advice is printed too, but it is advice only and never makes the check fail.
+    """
     config_path = default_config_path()
     report = check_config(config_path, default_store_dir())
 
@@ -313,15 +355,15 @@ def _status_config(*, quiet: bool) -> bool:
         click.echo(f"Config:  could not be read: {report.error}")
     elif report.changes:
         count = _plural(len(report.changes), "difference")
-        click.echo(
-            f"Config:  {count} from the team's preferred config in {_tilde(config_path)} (run: idea-oc sync config)"
-        )
+        where = _tilde(config_path)
+        click.echo(f"Config:  {count} from the team's preferred config in {where} (run: idea-oc sync config)")
         _echo_changes_list(report.changes)
     elif not quiet:
         click.echo(f"Config:  ok (matches the team's preferred config in {_tilde(config_path)})")
 
     if not quiet:
         _echo_config_extras(report.warnings, report.notes)
+        _echo_plugin_advice(check_plugins(config_path))
     return not report.problems
 
 

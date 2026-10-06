@@ -64,9 +64,24 @@ Apply these changes? The original is saved as ~/.config/opencode/opencode.jsonc.
 - the Bedrock provider settings, the `model` and `disabled_providers`,
 - the `permission` rules.
 
-**What it never touches.** Plugins are not changed: `idea-oc` only [tells you which are
-missing](../guides/plugins.md). Nothing else in your config is touched either, so your own settings,
-rules and comments stay as they are.
+**What it never touches.** Plugins are not changed. Nothing else in your config is touched either,
+so your own settings, rules and comments stay as they are.
+
+**Plugin advice.** After the config changes, `sync config` checks which of the team's
+[recommended plugins](../guides/plugins.md) your config lists and tells you what is missing. It never
+installs or edits plugins, and the advice has no effect on the exit code.
+
+```text
+Plugins (idea-oc does not install or change these):
+  missing (REQUIRED)  inject-env.js  keeps OpenCode's shell commands on the bedrockonly AWS profile
+  missing             cc-safety-net  blocks destructive commands (it also blocks force-push)
+  How to add the required plugin: https://co-cddo.github.io/gds-idea-pkg-oc/guides/plugins/#the-required-plugin
+```
+
+A plugin counts as listed whatever version you pin, and a plugin that is a file counts by its file
+name. If `opencode-snip` is listed but the `snip` program it needs is not installed, you get a
+warning, because without it the plugin does nothing and gives no error. When everything is listed
+you see one line: `Plugins: all the recommended plugins are listed.`
 
 **Three kinds of change**
 

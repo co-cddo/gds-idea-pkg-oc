@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from idea_oc.cli import cli
-from idea_oc.commands import DOCS_URL
+from idea_oc.docs import SYNC_WHY_URL as DOCS_URL
 from tests.conftest import skill_md
 
 REVIEWER = "co-cddo/gds-idea-ai-reviewer"
