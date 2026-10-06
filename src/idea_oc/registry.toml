@@ -16,3 +16,14 @@ allowed_owners = ["co-cddo"]
 repo = "co-cddo/gds-idea-ai-reviewer"
 discover = "src/ai_reviewer/skills"
 ref = "latest"
+
+# The agent skills for the team's own CLI tools live next to the code they describe, so they change in
+# the same pull request as the tool. Each is a named skill (not discovered), so only what is listed
+# here is installed.
+[[source]]
+repo = "co-cddo/gds-idea-app-kit"
+skills = ["skills/idea-app-usage"]
+
+[[source]]
+repo = "co-cddo/gds-idea-gh-kit"
+skills = ["skills/idea-gh-usage"]

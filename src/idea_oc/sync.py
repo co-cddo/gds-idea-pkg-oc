@@ -50,6 +50,14 @@ class SourcePlan:
     skills: tuple[PlannedSkill, ...] = ()
     error: str | None = None
 
+    @property
+    def message(self) -> str | None:
+        """The error, always starting with the repo it is about (planner errors already do)."""
+        if self.error is None:
+            return None
+        repo = self.source.repo
+        return self.error if self.error.startswith(f"{repo}:") else f"{repo}: {self.error}"
+
 
 @dataclass(frozen=True)
 class SkillOutcome:
@@ -79,7 +87,7 @@ class SyncResult:
     @property
     def errors(self) -> list[str]:
         """Every failure, as a printable line."""
-        plan_errors = [f"{p.source.repo}: {p.error}" for p in self.plans if p.error]
+        plan_errors = [p.message for p in self.plans if p.message]
         skill_errors = [f"{o.name}: {o.error}" for o in self.outcomes if o.error]
         return plan_errors + skill_errors
 

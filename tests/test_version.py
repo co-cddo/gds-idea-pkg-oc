@@ -113,7 +113,7 @@ def test_opt_out_variable_skips_the_request(httpx_mock, monkeypatch, value):
     assert httpx_mock.get_requests() == []
 
 
-def test_sync_advises_before_doing_any_work(cli_runner, github, monkeypatch):
+def test_sync_advises_before_doing_any_work(cli_runner, github, reviewer_only, monkeypatch):
     monkeypatch.setattr(version, "fetch_latest_version", lambda: Version("9.0.0"))
     monkeypatch.delenv("IDEA_OC_NO_VERSION_CHECK")
     monkeypatch.setattr(version, "__version__", "0.3.0")
@@ -125,7 +125,7 @@ def test_sync_advises_before_doing_any_work(cli_runner, github, monkeypatch):
     assert result.output.index("idea-tools upgrade") < result.output.index("Resolving sources")
 
 
-def test_status_advises_but_does_not_change_the_exit_code(cli_runner, github, monkeypatch):
+def test_status_advises_but_does_not_change_the_exit_code(cli_runner, github, reviewer_only, monkeypatch):
     monkeypatch.setattr(version, "fetch_latest_version", lambda: Version("9.0.0"))
     monkeypatch.delenv("IDEA_OC_NO_VERSION_CHECK")
     monkeypatch.setattr(version, "__version__", "0.3.0")
@@ -138,7 +138,7 @@ def test_status_advises_but_does_not_change_the_exit_code(cli_runner, github, mo
     assert "idea-tools upgrade" in result.output
 
 
-def test_quiet_status_prints_a_single_line_notice_only(cli_runner, github, monkeypatch):
+def test_quiet_status_prints_a_single_line_notice_only(cli_runner, github, reviewer_only, monkeypatch):
     monkeypatch.setattr(version, "fetch_latest_version", lambda: Version("9.0.0"))
     monkeypatch.delenv("IDEA_OC_NO_VERSION_CHECK")
     monkeypatch.setattr(version, "__version__", "0.3.0")

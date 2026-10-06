@@ -277,7 +277,7 @@ def test_an_unreadable_config_gets_no_plugin_advice(cli_runner, config_file):
     assert "cannot edit" in result.output
 
 
-def test_the_skills_stage_says_nothing_about_plugins(cli_runner, github, snip_absent):
+def test_the_skills_stage_says_nothing_about_plugins(cli_runner, github, reviewer_only, snip_absent):
     github.add_repo("co-cddo/gds-idea-ai-reviewer", {"src/ai_reviewer/skills/a/SKILL.md": skill_md("a")}, tag="v0.1.22")
 
     result = cli_runner.invoke(cli, ["sync", "skills"])
