@@ -1,7 +1,8 @@
 # idea-oc
 
 Installs the GDS IDEA team's approved [OpenCode](https://opencode.ai) agent skills on your machine
-and registers them with OpenCode, so everyone works from the same set.
+and checks your OpenCode config against the team's preferred setup, so everyone works from the same
+set.
 
 **Documentation: <https://co-cddo.github.io/gds-idea-pkg-oc/>**
 

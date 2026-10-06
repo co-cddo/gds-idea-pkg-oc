@@ -1,11 +1,11 @@
 # sync
 
-Install the approved skills and register them with OpenCode.
+Install the approved skills, and bring your OpenCode config in line with the team's preferred one.
 
 ```bash
 idea-oc sync            # both stages: skills, then config
 idea-oc sync skills     # install the approved skills (needs the network)
-idea-oc sync config     # update your OpenCode config (works offline)
+idea-oc sync config     # compare your OpenCode config with the team's (works offline)
 ```
 
 ## The two stages
@@ -13,7 +13,7 @@ idea-oc sync config     # update your OpenCode config (works offline)
 | Stage | What it does | Needs the network | Writes to |
 |---|---|---|---|
 | `skills` | Installs the approved skills into the skill folder, and removes ones that are no longer approved | Yes | The skill folder only |
-| `config` | Registers the skill folder in your OpenCode config | No | Your OpenCode config only |
+| `config` | Compares your OpenCode config with the team's preferred config and applies the differences you approve | No | Your OpenCode config only |
 
 The stages are independent. Either can be run, skipped or fail without affecting the other, and
 neither needs the other to have run first. If you run both and `skills` fails, `config` still runs.
@@ -25,7 +25,7 @@ The command exits with status 1 if any stage failed.
 |---|---|---|
 | `--dry-run` | both | Show what would change and write nothing. Never prompts. |
 | `--prune` / `--no-prune` | skills | Remove skills that are no longer approved (the default), or keep them. |
-| `-y`, `--yes` | config | Apply changes to your OpenCode config without asking. |
+| `-y`, `--yes` | config | Apply the changes to your OpenCode config without asking. |
 | `--registry FILE` | both | Use a custom registry file instead of the built-in one. Goes before the command. |
 
 ## The skills stage
@@ -45,12 +45,65 @@ second run downloads nothing.
 
 ## The config stage
 
-OpenCode only loads skills from folders listed under `skills.paths` in its config. This stage adds
-the skill folder to that list. It shows you the change, asks yes or no, and saves a backup next to
-the file as `opencode.jsonc.idea-oc.bak` before it writes.
+This stage compares your OpenCode config with the team's
+[preferred config](../reference/preferred-config.md), shows you what would change, and asks whether to
+apply it.
 
-Comments and formatting in your config are kept. If the file cannot be edited safely, for example
-because it is not valid, `idea-oc` leaves it alone and prints the snippet to add yourself.
+```text
+Changes to ~/.config/opencode/opencode.jsonc:
+  append  skills.paths                              ~/.local/share/idea-oc/skills
+  change  model                                     amazon-bedrock/eu.anthropic.claude-sonnet-5 -> amazon-bedrock/eu.anthropic.claude-sonnet-5-5
+  add     permission.bash["rm -rf*"]                deny
+
+Apply these changes? The original is saved as ~/.config/opencode/opencode.jsonc.idea-oc.bak. [y/N]:
+```
+
+**What it looks at**
+
+- the skill folder, which must be listed under `skills.paths` so OpenCode loads your skills,
+- the Bedrock provider settings, the `model` and `disabled_providers`,
+- the `permission` rules.
+
+**What it never touches.** Plugins are not changed: `idea-oc` only [tells you which are
+missing](../guides/plugins.md). Nothing else in your config is touched either, so your own settings,
+rules and comments stay as they are.
+
+**Three kinds of change**
+
+| Change | Meaning |
+|---|---|
+| `add` | The setting or rule is missing |
+| `change` | The setting is there with a different value. Both values are shown. |
+| `append` | Items are missing from a list. Items you already have are kept: lists are only added to. |
+
+**Your answer**
+
+- **Yes** applies the changes and saves your original next to it as `opencode.jsonc.idea-oc.bak`.
+  Comments and formatting are kept.
+- **No**, which is the default, leaves your config exactly as it was and saves what it would have
+  looked like as `opencode.jsonc.new`. Compare the two and copy across what you want:
+
+  ```bash
+  diff ~/.config/opencode/opencode.jsonc ~/.config/opencode/opencode.jsonc.new
+  ```
+
+  Running `sync config` again asks again. The `.new` file is replaced each time, and removed once
+  your config matches or you accept the changes.
+- With `--yes` it applies without asking. With no terminal to ask on, it counts as no. With
+  `--dry-run` it shows the changes and writes nothing, not even a `.new` file.
+
+**Where new permission rules go.** Rules are read top to bottom and the last matching rule wins, so
+position matters. A missing rule goes after the team rules that should come before it and before the
+specific rules it refines. Your own rules stay where they are, so a more specific rule of yours below
+the team's still wins. If a rule in your config would stop a team rule from working, `sync config`
+says so:
+
+```text
+Heads up: permission.bash["rm -rf*"] (deny) is overridden by '*' (allow) and will have no effect.
+```
+
+If the config cannot be edited safely, for example because it is not valid, `idea-oc` leaves it alone
+and prints what you need to add yourself.
 
 ## Why sync skills does not edit your config
 

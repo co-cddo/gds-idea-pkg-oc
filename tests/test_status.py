@@ -62,7 +62,8 @@ def test_status_before_first_sync_reports_everything_missing(cli_runner, reviewe
     result = cli_runner.invoke(cli, ["status"])
 
     assert result.exit_code == 1
-    assert "skills.paths is not registered" in result.output
+    assert "differences from the team's preferred config" in result.output
+    assert "skills.paths" in result.output
     assert "Skills:  2 approved, 2 need syncing" in result.output
     assert "cdk-review" in result.output
     assert "not installed" in result.output
@@ -107,7 +108,8 @@ def test_removed_config_entry_is_reported(cli_runner, synced, config_file):
     result = cli_runner.invoke(cli, ["status"])
 
     assert result.exit_code == 1
-    assert "skills.paths is not registered" in result.output
+    assert "differences from the team's preferred config" in result.output
+    assert "skills.paths" in result.output
 
 
 def test_commented_config_is_read_correctly(cli_runner, synced, config_file):

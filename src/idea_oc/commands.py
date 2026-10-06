@@ -11,17 +11,23 @@ from idea_oc.github import GitHubClient, get_token
 from idea_oc.models import Registry
 from idea_oc.opencode_config import (
     ConfigError,
+    ConfigPlan,
     ConfigState,
+    apply_plan,
+    backup_path,
+    clear_proposal,
     default_config_path,
-    ensure_skills_path,
     manual_snippet,
+    plan_config,
     skills_path_state,
+    write_proposal,
 )
 from idea_oc.planner import PlanError
 from idea_oc.registry import RegistryError, load_registry
-from idea_oc.status import ConfigReport, SkillsReport, check_config, check_skills, personal_skill_dirs
+from idea_oc.status import SkillsReport, check_config, check_skills, personal_skill_dirs
 from idea_oc.store import Store, default_store_dir
 from idea_oc.sync import Action, SourcePlan, SyncResult, apply_plans, plan_registry
+from idea_oc.team_config import Change, describe
 from idea_oc.version import check_for_update
 
 STAGES = ("skills", "config")
@@ -78,35 +84,6 @@ def _echo_summary(result: SyncResult, *, dry_run: bool) -> None:
         return
     prefix = "Dry run, nothing written: " if dry_run else ""
     click.echo(f"{prefix}{added} installed, {updated} updated, {len(result.removed)} removed.")
-
-
-def _offer_registration(store_dir: Path, *, yes: bool) -> None:
-    """Make sure OpenCode is told about the store, asking first."""
-    config_path = default_config_path()
-    try:
-        if skills_path_state(config_path, store_dir) is ConfigState.REGISTERED:
-            return
-    except ConfigError as e:
-        click.echo(f"\n{e}\nAdd this yourself:\n{manual_snippet(store_dir)}", err=True)
-        return
-
-    click.echo(f"\nOpenCode does not load this folder yet. Add it to {_tilde(config_path)}?")
-    click.echo(f"  {manual_snippet(store_dir)}".replace("\n", "\n  "))
-    click.echo(f"  (a backup is saved next to the file as {config_path.name}.idea-oc.bak)")
-    try:
-        approved = yes or click.confirm("Register the skill folder?", default=True)
-    except click.Abort:
-        approved = False
-
-    if not approved:
-        click.echo(f"Not changed. To do it yourself, add:\n{manual_snippet(store_dir)}")
-        return
-    try:
-        ensure_skills_path(config_path, store_dir)
-    except ConfigError as e:
-        click.echo(f"{e}\nAdd this yourself:\n{manual_snippet(store_dir)}", err=True)
-        return
-    click.echo("Registered.")
 
 
 def _selected(stage: str | None) -> tuple[str, ...]:
@@ -178,15 +155,90 @@ def _registration_needed(store_dir: Path) -> bool:
         return True
 
 
-def _sync_config(*, dry_run: bool, yes: bool) -> bool:
-    """Make sure OpenCode is told about the store. Works offline and never touches the store."""
-    store_dir = default_store_dir()
-    if not _registration_needed(store_dir):
-        click.echo("Config is up to date.")
-    elif dry_run:
-        click.echo(f"Would ask to register {_tilde(store_dir)} in {_tilde(default_config_path())}.")
+def _echo_changes_list(changes: list[Change]) -> None:
+    rows = [describe(change) for change in changes]
+    width = min(max((len(key) for _, key, _ in rows), default=0), 50)
+    for verb, key, detail in rows:
+        click.echo(f"  {verb:<6}  {key:<{width}}  {detail}")
+
+
+def _echo_config_extras(warnings: list[str], notes: list[str]) -> None:
+    for line in warnings:
+        click.echo(f"Heads up: {line}")
+    for line in notes:
+        click.echo(f"Note: {line}")
+
+
+def _confirm(prompt: str, *, yes: bool) -> bool:
+    """Ask yes or no, defaulting to no. No terminal to ask on counts as no."""
+    if yes:
+        return True
+    try:
+        return click.confirm(prompt, default=False)
+    except click.Abort:
+        return False
+
+
+def _decline(config: ConfigPlan, config_path: Path) -> None:
+    """The user said no: save what would have changed next to their file and say how to use it."""
+    try:
+        proposal = write_proposal(config, config_path)
+    except ConfigError as e:
+        click.echo(f"Not changed. {e}\nMake the changes listed above yourself.")
+        return
+    click.echo(f"Not changed. The proposed config is saved as {_tilde(proposal)}.")
+    if config.exists:
+        click.echo(f"Review it and copy across what you want:\n  diff {_tilde(config_path)} {_tilde(proposal)}")
     else:
-        _offer_registration(store_dir, yes=yes)
+        click.echo(f"To use it as your config, rename it to {config_path.name}.")
+
+
+def _accept(config: ConfigPlan, config_path: Path) -> bool:
+    try:
+        apply_plan(config, config_path)
+    except ConfigError as e:
+        click.echo(f"{e}\nMake the changes listed above yourself.", err=True)
+        return True
+    click.echo(f"Updated {_tilde(config_path)}.")
+    if config.exists:
+        click.echo(f"The original is saved as {_tilde(backup_path(config_path))}.")
+    return True
+
+
+def _sync_config(*, dry_run: bool, yes: bool) -> bool:
+    """Bring the user's OpenCode config in line with the team's preferred one. Offline; never touches the store."""
+    store_dir = default_store_dir()
+    config_path = default_config_path()
+    try:
+        config = plan_config(config_path, store_dir)
+    except ConfigError as e:
+        click.echo(f"{e}\nAdd this yourself to register the skills folder:\n{manual_snippet(store_dir)}", err=True)
+        return True
+
+    plan = config.plan
+    if not plan.pending:
+        click.echo("Config is up to date.")
+        _echo_config_extras(plan.warnings, plan.notes)
+        if not dry_run:
+            clear_proposal(config_path)
+        return True
+
+    if dry_run:
+        heading = "Would change" if config.exists else "Would create"
+    else:
+        heading = "Changes to" if config.exists else "New file"
+    click.echo(f"{heading} {_tilde(config_path)}:")
+    _echo_changes_list(plan.changes)
+    _echo_config_extras(plan.warnings, plan.notes)
+
+    if dry_run:
+        click.echo("Dry run, nothing written.")
+        return True
+
+    backup = f" The original is saved as {_tilde(backup_path(config_path))}." if config.exists else ""
+    if _confirm(f"\nApply these changes?{backup}", yes=yes):
+        return _accept(config, config_path)
+    _decline(config, config_path)
     return True
 
 
@@ -211,14 +263,6 @@ def run_sync(*, registry_path: Path | None, stage: str | None, dry_run: bool, pr
 
     if not all(outcomes):
         raise click.exceptions.Exit(1)
-
-
-def _config_line(report: ConfigReport, config_path: Path) -> str:
-    if report.error:
-        return f"could not be read: {report.error}"
-    if report.problems:
-        return f"skills.paths is not registered in {_tilde(config_path)} (run: idea-oc sync config)"
-    return f"ok (skills.paths registered in {_tilde(config_path)})"
 
 
 def _echo_skills_status(report: SkillsReport, *, quiet: bool) -> None:
@@ -261,11 +305,23 @@ def _status_skills(*, registry_path: Path | None, quiet: bool) -> bool:
 
 
 def _status_config(*, quiet: bool) -> bool:
-    """Report config drift. Returns True if everything is in order. Works offline."""
+    """Report how the config differs from the team's preferred one. Returns True if it matches. Offline."""
     config_path = default_config_path()
     report = check_config(config_path, default_store_dir())
-    if report.problems or not quiet:
-        click.echo(f"Config:  {_config_line(report, config_path)}")
+
+    if report.error:
+        click.echo(f"Config:  could not be read: {report.error}")
+    elif report.changes:
+        count = _plural(len(report.changes), "difference")
+        click.echo(
+            f"Config:  {count} from the team's preferred config in {_tilde(config_path)} (run: idea-oc sync config)"
+        )
+        _echo_changes_list(report.changes)
+    elif not quiet:
+        click.echo(f"Config:  ok (matches the team's preferred config in {_tilde(config_path)})")
+
+    if not quiet:
+        _echo_config_extras(report.warnings, report.notes)
     return not report.problems
 
 

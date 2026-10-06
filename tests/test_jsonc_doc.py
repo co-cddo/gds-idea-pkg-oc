@@ -310,6 +310,63 @@ def test_indentation_style_is_followed(doc):
     assert '\t"d": {\n\t\t"e": 3\n\t}\n' in tabbed.text
 
 
+# --- set: first ------------------------------------------------------------------------------
+
+
+def test_first_puts_a_new_key_before_all_the_others(doc):
+    doc.set(("permission", "bash", "head *"), "deny", first=True)
+
+    assert keys(doc, "permission", "bash")[:2] == ["head *", "*"]
+    assert '    "bash": {\n      "head *": "deny",\n      "*": "allow",' in doc.text
+    assert comments(doc.text) == comments(WALKTHROUGH)
+
+
+def test_first_keeps_a_comment_that_led_the_old_first_member_with_it():
+    text = '{\n  // about a\n  "a": 1, // one\n  "b": 2\n}\n'
+    doc = JsoncDocument.parse(text)
+
+    doc.set(("z",), 0, first=True)
+
+    assert doc.text == '{\n  "z": 0,\n  // about a\n  "a": 1, // one\n  "b": 2\n}\n'
+
+
+@pytest.mark.parametrize("style", STYLES)
+def test_first_works_in_every_formatting_style(style):
+    text = STYLES[style]
+    doc = JsoncDocument.parse(text)
+
+    doc.set(("top",), "x", first=True)
+    doc.set(("b", "head"), "y", first=True)
+
+    assert list(doc.data)[0] == "top"
+    assert list(doc.data["b"])[0] == "head"
+    assert comments(doc.text) == comments(text)
+    assert JsoncDocument.parse(doc.text).data == doc.data
+
+
+def test_first_on_an_empty_object_just_adds_the_member():
+    doc = JsoncDocument.parse("{}\n")
+
+    doc.set(("a",), 1, first=True)
+
+    assert doc.data == {"a": 1}
+
+
+def test_first_and_after_apply_to_the_final_key_not_to_parents_being_created(doc):
+    doc.set(("brand", "new", "rule"), "x", first=True)
+    doc.set(("another", "one", "rule"), "y", after="model")
+
+    assert keys(doc)[0] == "$schema"  # "brand" and "another" were appended, not put first or after "model"
+    assert keys(doc)[-2:] == ["brand", "another"]
+
+
+def test_first_is_ignored_when_the_key_already_exists(doc):
+    doc.set(("model",), "other", first=True)
+
+    assert keys(doc)[0] == "$schema"
+    assert doc.get(("model",)) == "other"
+
+
 # --- verification ----------------------------------------------------------------------------
 
 

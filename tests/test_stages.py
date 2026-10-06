@@ -44,7 +44,7 @@ def test_sync_skills_installs_but_never_touches_the_config(cli_runner, reviewer,
     assert result.exit_code == 0, result.output
     assert (store_dir / "cdk-review" / "SKILL.md").exists()
     assert not config_file.exists()
-    assert "Registered." not in result.output
+    assert "Updated" not in result.output
 
 
 def test_sync_skills_explains_why_the_folder_is_not_registered_and_what_to_do(cli_runner, reviewer):
@@ -76,7 +76,7 @@ def test_combined_sync_does_not_duplicate_the_advice(cli_runner, reviewer):
 
 
 @pytest.mark.httpx_mock(assert_all_responses_were_requested=False)  # the fake must stay unused
-def test_sync_config_registers_without_any_network_or_store(cli_runner, github, store_dir, config_file):
+def test_sync_config_updates_the_config_without_any_network_or_store(cli_runner, github, store_dir, config_file):
     result = cli_runner.invoke(cli, ["sync", "config", "--yes"])
 
     assert result.exit_code == 0, result.output
@@ -117,7 +117,9 @@ def test_sync_config_dry_run_writes_nothing_and_does_not_prompt(cli_runner, conf
     result = cli_runner.invoke(cli, ["sync", "config", "--dry-run"])
 
     assert result.exit_code == 0
-    assert "Would ask to register" in result.output
+    assert "Would create" in result.output
+    assert "skills.paths" in result.output
+    assert "Dry run, nothing written." in result.output
     assert not config_file.exists()
 
 
@@ -209,7 +211,7 @@ def test_status_reports_both_and_exits_1_if_either_has_a_problem(cli_runner, syn
 
     assert result.exit_code == 1
     assert "Skills:  2 approved, 0 need syncing" in result.output
-    assert "skills.paths is not registered" in result.output
+    assert "differences from the team's preferred config" in result.output
 
 
 def test_status_skills_failure_does_not_hide_the_config_result(cli_runner, config_file, tmp_path):

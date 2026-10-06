@@ -10,25 +10,15 @@ from importlib.resources import files
 import pytest
 
 from idea_oc.jsonc_doc import JsoncDocument
+from idea_oc.permissions import effective, find_overridden, wildcard_match
+
+
+def evaluate(rules: dict[str, str], command: str) -> str:
+    return effective(rules, command)[1]
 
 
 def team_config_text() -> str:
     return files("idea_oc").joinpath("opencode.jsonc").read_text()
-
-
-def wildcard_match(text: str, pattern: str) -> bool:
-    """A port of OpenCode's ``Wildcard.match`` (packages/core/src/util/wildcard.ts)."""
-    escaped = re.sub(r"[.+^${}()|\[\]\\]", r"\\\g<0>", pattern.replace("\\", "/"))
-    escaped = escaped.replace("*", ".*").replace("?", ".")
-    if escaped.endswith(" .*"):  # "git push *" also matches a bare "git push"
-        escaped = escaped[:-3] + "( .*)?"
-    return re.fullmatch(escaped, text.replace("\\", "/"), re.S) is not None
-
-
-def evaluate(rules: dict[str, str], command: str) -> str:
-    """The action OpenCode takes: the last matching rule wins, and no match means ask."""
-    matching = [action for pattern, action in rules.items() if wildcard_match(command, pattern)]
-    return matching[-1] if matching else "ask"
 
 
 @pytest.fixture(scope="module")
@@ -92,38 +82,26 @@ def test_bash_commands_get_the_action_the_comments_promise(bash_rules, command, 
     assert evaluate(bash_rules, command) == expected
 
 
-def witness(pattern: str) -> str:
-    """A command that the rule's own pattern describes: the pattern with its wildcards taken out."""
-    return pattern.replace("*", "").strip()
-
-
-def rules_to_check(rules: dict[str, str]) -> list[tuple[str, str]]:
-    return [(pattern, action) for pattern, action in rules.items() if pattern != "*"]
-
-
 def test_no_rule_is_shadowed_by_a_later_one(bash_rules):
     """A rule that a later rule overrides for its own command is dead: it can never take effect."""
-    dead = [
-        f"{pattern!r} says {action} but the effective action is {evaluate(bash_rules, witness(pattern))}"
-        for pattern, action in rules_to_check(bash_rules)
-        if evaluate(bash_rules, witness(pattern)) != action
-    ]
-
-    assert dead == []
+    assert find_overridden(bash_rules) == []
 
 
 def test_the_shadow_check_catches_the_original_force_push_mistake():
     mistaken = {"*": "allow", "git push --force*": "deny", "git push *": "ask"}
 
-    dead = [p for p, a in rules_to_check(mistaken) if evaluate(mistaken, witness(p)) != a]
+    [dead] = find_overridden(mistaken)
 
-    assert dead == ["git push --force*"]
+    assert (dead.pattern, dead.action, dead.by_pattern, dead.by_action) == (
+        "git push --force*",
+        "deny",
+        "git push *",
+        "ask",
+    )
 
 
 def test_the_shadow_check_accepts_specific_rules_placed_after_general_ones():
-    ordered = {"*": "allow", "git push *": "ask", "git push --force*": "deny"}
-
-    assert [p for p, a in rules_to_check(ordered) if evaluate(ordered, witness(p)) != a] == []
+    assert find_overridden({"*": "allow", "git push *": "ask", "git push --force*": "deny"}) == []
 
 
 @pytest.mark.parametrize("section", ["external_directory", "edit"])

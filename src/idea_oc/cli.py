@@ -40,7 +40,7 @@ def sync(ctx: click.Context, stage: str | None, dry_run: bool, prune: bool, yes:
     \b
     STAGE is optional. Without it both stages run, skills first:
       skills   install the approved skills (needs the network)
-      config   register the skills folder in your OpenCode config (works offline)
+      config   compare your OpenCode config with the team's preferred one (works offline)
 
     The stages are independent: neither needs the other to have run.
     """

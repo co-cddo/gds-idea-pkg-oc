@@ -55,6 +55,12 @@ Two consequences:
 The repository's tests check every rule in the preferred config for this: each rule must be the one
 that actually applies to the command it describes.
 
+## Keeping your config in step
+
+`idea-oc sync config` compares your config with the preferred one and offers to apply the
+differences, and `idea-oc status config` lists them without changing anything. Everything above is
+compared except the plugins, which are only advised on. See [`sync`](../commands/sync.md#the-config-stage).
+
 ## Making your own changes
 
 You are free to change your own config. Add your own rules **below** the team's rules in the same

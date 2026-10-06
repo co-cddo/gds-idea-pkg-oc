@@ -9,10 +9,11 @@ from pathlib import Path
 
 from idea_oc.github import GitHubClient
 from idea_oc.models import Registry
-from idea_oc.opencode_config import ConfigError, ConfigState, skills_path_state
+from idea_oc.opencode_config import ConfigError, plan_config
 from idea_oc.planner import SKILL_FILE, PlannedSkill, frontmatter_name
 from idea_oc.store import SkillDiff, Store
 from idea_oc.sync import plan_registry
+from idea_oc.team_config import Change
 
 
 @dataclass(frozen=True)
@@ -84,17 +85,23 @@ class ConfigReport:
     """What ``idea-oc status config`` reports.
 
     Attributes:
-        state: Whether the store is registered, or None if the config could not be read.
-        error: Why the config could not be read.
+        changes: Differences between the user's config and the team's preferred config.
+        warnings: Team rules that a rule in the user's own config stops from working.
+        notes: Things that were left alone and why.
+        exists: Whether the config file exists.
+        error: Why the config could not be read, if it could not.
     """
 
-    state: ConfigState | None
+    changes: list[Change] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+    exists: bool = True
     error: str | None = None
 
     @property
     def problems(self) -> bool:
         """True when something needs ``idea-oc sync config``."""
-        return self.state is not ConfigState.REGISTERED
+        return bool(self.error or self.changes)
 
 
 def personal_skill_dirs(config_path: Path) -> list[Path]:
@@ -164,8 +171,10 @@ def check_skills(
 
 
 def check_config(config_path: Path, store_dir: Path) -> ConfigReport:
-    """Check the OpenCode config. Works offline."""
+    """Compare the OpenCode config with the team's preferred config. Works offline."""
     try:
-        return ConfigReport(skills_path_state(config_path, store_dir))
+        config = plan_config(config_path, store_dir)
     except ConfigError as e:
-        return ConfigReport(None, str(e))
+        return ConfigReport(error=str(e))
+    plan = config.plan
+    return ConfigReport(plan.changes, plan.warnings, plan.notes, config.exists)

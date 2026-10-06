@@ -1,11 +1,8 @@
-"""Register the skill store in the user's OpenCode config.
+"""Read, plan and write the user's OpenCode config.
 
-OpenCode loads extra skill folders from ``skills.paths``. That entry is the only
-thing idea-oc writes to the config. It loads after the personal skills folder,
-so team skills win over personal skills with the same name.
-
-Edits go through ``JsoncDocument``, so the comments and formatting in a hand-written
-``opencode.jsonc`` survive.
+The config stage compares the user's config with the team's preferred one (see ``team_config``),
+shows what would change, and either applies the changes (with a backup) or saves them as a
+``.new`` file for the user to merge by hand. Edits keep the user's comments and formatting.
 """
 
 from __future__ import annotations
@@ -13,14 +10,17 @@ from __future__ import annotations
 import json
 import os
 import shutil
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
 from idea_oc.jsonc_doc import JsoncDocument, JsoncError
+from idea_oc.team_config import SKILLS_PATH, Plan, apply_changes, plan_changes
 
-SKILLS_PATH = ("skills", "paths")
 # The order OpenCode itself looks for the global config in: the first one that exists is its "main" file.
 CONFIG_FILENAMES = ("opencode.jsonc", "opencode.json", "config.json")
+BACKUP_SUFFIX = ".idea-oc.bak"
+PROPOSAL_SUFFIX = ".new"
 
 
 class ConfigError(Exception):
@@ -28,11 +28,26 @@ class ConfigError(Exception):
 
 
 class ConfigState(Enum):
-    """Whether the store is registered with OpenCode."""
+    """Whether the skill store is registered with OpenCode."""
 
     REGISTERED = "registered"
     NOT_REGISTERED = "not registered"
     NO_FILE = "no config file"
+
+
+@dataclass
+class ConfigPlan:
+    """The user's config and the changes needed to bring it in line with the team's.
+
+    Attributes:
+        document: The user's config as read (an empty document if the file does not exist).
+        plan: The changes needed.
+        exists: Whether the config file exists.
+    """
+
+    document: JsoncDocument
+    plan: Plan
+    exists: bool
 
 
 def default_config_path() -> Path:
@@ -48,17 +63,25 @@ def default_config_path() -> Path:
     return next((path for path in candidates if path.exists()), candidates[0])
 
 
-def manual_snippet(store_dir: Path) -> str:
-    """The JSON a user can add by hand when idea-oc cannot edit their config."""
-    return json.dumps({"skills": {"paths": [_as_config_value(store_dir)]}}, indent=2)
-
-
-def _as_config_value(store_dir: Path) -> str:
+def store_config_value(store_dir: Path) -> str:
     """Write the store path with ``~`` when it is under the home directory."""
     try:
         return f"~/{store_dir.relative_to(Path.home())}"
     except ValueError:
         return str(store_dir)
+
+
+def manual_snippet(store_dir: Path) -> str:
+    """The JSON a user can add by hand to register the skill store."""
+    return json.dumps({"skills": {"paths": [store_config_value(store_dir)]}}, indent=2)
+
+
+def backup_path(config_path: Path) -> Path:
+    return config_path.with_name(config_path.name + BACKUP_SUFFIX)
+
+
+def proposal_path(config_path: Path) -> Path:
+    return config_path.with_name(config_path.name + PROPOSAL_SUFFIX)
 
 
 def _open(path: Path) -> JsoncDocument:
@@ -73,21 +96,6 @@ def _open(path: Path) -> JsoncDocument:
         raise ConfigError(f"idea-oc cannot edit {path}: {e}") from e
 
 
-def _registered_paths(document: JsoncDocument, path: Path) -> list:
-    """The ``skills.paths`` list (empty if absent)."""
-    skills = document.get(("skills",), {})
-    if not isinstance(skills, dict):
-        raise ConfigError(f"'skills' in {path} must be an object")
-    paths = skills.get("paths", [])
-    if not isinstance(paths, list) or not all(isinstance(p, str) for p in paths):
-        raise ConfigError(f"'skills.paths' in {path} must be a list of strings")
-    return paths
-
-
-def _is_store(entry: str, store_dir: Path) -> bool:
-    return Path(entry).expanduser() == store_dir
-
-
 def skills_path_state(config_path: Path, store_dir: Path) -> ConfigState:
     """Report whether ``store_dir`` is registered in ``skills.paths``.
 
@@ -96,45 +104,68 @@ def skills_path_state(config_path: Path, store_dir: Path) -> ConfigState:
     """
     if not config_path.exists():
         return ConfigState.NO_FILE
-    paths = _registered_paths(_open(config_path), config_path)
-    registered = any(_is_store(p, store_dir) for p in paths)
+    paths = _open(config_path).get(SKILLS_PATH, [])
+    if not isinstance(paths, list):
+        return ConfigState.NOT_REGISTERED
+    registered = any(isinstance(p, str) and Path(p).expanduser() == store_dir for p in paths)
     return ConfigState.REGISTERED if registered else ConfigState.NOT_REGISTERED
 
 
-def ensure_skills_path(config_path: Path, store_dir: Path) -> bool:
-    """Add ``store_dir`` to ``skills.paths``, leaving everything else untouched.
-
-    The config is backed up to ``<name>.idea-oc.bak`` before it is changed, and
-    written atomically. Comments and formatting are preserved.
-
-    Args:
-        config_path: The OpenCode config file (created if missing).
-        store_dir: The skill store folder.
-
-    Returns:
-        True if the file was changed, False if the store was already registered.
+def plan_config(config_path: Path, store_dir: Path) -> ConfigPlan:
+    """Work out what the team's preferred config would change in the user's config.
 
     Raises:
-        ConfigError: If the config cannot be parsed or has an unexpected shape.
+        ConfigError: If the config cannot be read, parsed or compared.
     """
     document = _open(config_path)
-    paths = _registered_paths(document, config_path)
-    if any(_is_store(p, store_dir) for p in paths):
-        return False
-
-    value = _as_config_value(store_dir)
     try:
-        if paths or document.get(SKILLS_PATH) is not None:
-            document.append(SKILLS_PATH, value)
-        else:
-            document.set(SKILLS_PATH, [value])
+        plan = plan_changes(document, store_dir, store_config_value(store_dir))
+    except JsoncError as e:
+        raise ConfigError(f"{config_path}: {e}") from e
+    return ConfigPlan(document, plan, config_path.exists())
+
+
+def _render(config: ConfigPlan, config_path: Path) -> str:
+    try:
+        apply_changes(config.document, config.plan.changes)
     except JsoncError as e:
         raise ConfigError(f"idea-oc cannot edit {config_path}: {e}") from e
+    return config.document.text
 
-    if config_path.exists():
-        shutil.copy2(config_path, config_path.with_name(f"{config_path.name}.idea-oc.bak"))
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = config_path.with_name(f"{config_path.name}.{os.getpid()}.tmp")
-    tmp.write_text(document.text)
-    tmp.replace(config_path)
-    return True
+
+def _write_atomically(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(text)
+    tmp.replace(path)
+
+
+def apply_plan(config: ConfigPlan, config_path: Path) -> None:
+    """Apply the changes to the config file, saving a backup of the original first.
+
+    Any earlier proposal (``.new`` file) is removed, since it is now out of date.
+
+    Raises:
+        ConfigError: If the edits cannot be made safely. The file is not touched in that case.
+    """
+    text = _render(config, config_path)
+    if config.exists:
+        shutil.copy2(config_path, backup_path(config_path))
+    _write_atomically(config_path, text)
+    clear_proposal(config_path)
+
+
+def write_proposal(config: ConfigPlan, config_path: Path) -> Path:
+    """Save the config with the changes applied next to the original, for the user to merge by hand.
+
+    Raises:
+        ConfigError: If the edits cannot be made safely.
+    """
+    path = proposal_path(config_path)
+    _write_atomically(path, _render(config, config_path))
+    return path
+
+
+def clear_proposal(config_path: Path) -> None:
+    """Remove an out-of-date proposal."""
+    proposal_path(config_path).unlink(missing_ok=True)

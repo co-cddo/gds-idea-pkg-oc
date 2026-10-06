@@ -31,7 +31,7 @@ def reviewer(github):
     return github
 
 
-def test_first_sync_installs_registers_and_reports(cli_runner, reviewer, store_dir, config_file):
+def test_first_sync_installs_skills_and_creates_the_config(cli_runner, reviewer, store_dir, config_file):
     result = cli_runner.invoke(cli, ["sync", "--yes"])
 
     assert result.exit_code == 0, result.output
@@ -39,10 +39,15 @@ def test_first_sync_installs_registers_and_reports(cli_runner, reviewer, store_d
     assert "+ cdk-review" in result.output
     assert "+ readme-review" in result.output
     assert "2 installed, 0 updated, 0 removed." in result.output
-    assert "Registered." in result.output
+    assert "New file" in result.output
+    assert "Updated ~/.config/opencode/opencode.json." in result.output
     assert "Restart OpenCode" in result.output
     assert (store_dir / "cdk-review" / "SKILL.md").exists()
-    assert json.loads(config_file.read_text())["skills"]["paths"] == ["~/.local/share/idea-oc/skills"]
+    config = json.loads(config_file.read_text())
+    assert config["skills"]["paths"] == ["~/.local/share/idea-oc/skills"]
+    assert config["model"] == "amazon-bedrock/eu.anthropic.claude-sonnet-5-5"
+    assert config["permission"]["bash"]["gh pr merge *"] == "deny"
+    assert "plugin" not in config  # plugins are advised on, never added
 
 
 def test_second_sync_is_a_quiet_no_op(cli_runner, reviewer):
@@ -54,24 +59,73 @@ def test_second_sync_is_a_quiet_no_op(cli_runner, reviewer):
     assert result.exit_code == 0
     assert "Everything is up to date (2 skills)." in result.output
     assert "Restart OpenCode" not in result.output
-    assert "Registered." not in result.output
+    assert "Config is up to date." in result.output
+    assert "Updated" not in result.output
     assert reviewer.blob_requests() == []
 
 
-def test_prompt_can_be_declined_and_shows_the_snippet(cli_runner, reviewer, config_file):
+def test_declining_leaves_the_config_alone_and_saves_a_proposal_to_merge_by_hand(cli_runner, reviewer, config_file):
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text('{\n  "model": "old" // mine\n}\n')
+
     result = cli_runner.invoke(cli, ["sync"], input="n\n")
 
     assert result.exit_code == 0
+    assert "Apply these changes?" in result.output
+    assert "Not changed. The proposed config is saved as ~/.config/opencode/opencode.json.new." in result.output
+    assert "diff ~/.config/opencode/opencode.json ~/.config/opencode/opencode.json.new" in result.output
+    assert config_file.read_text() == '{\n  "model": "old" // mine\n}\n'
+    proposal = config_file.with_name("opencode.json.new")
+    assert "// mine" in proposal.read_text()
+    assert json.loads(proposal.read_text().replace("// mine", ""))["model"].endswith("sonnet-5-5")
+    assert not config_file.with_name("opencode.json.idea-oc.bak").exists()
+
+
+def test_declining_with_no_existing_config_proposes_a_new_file(cli_runner, reviewer, config_file):
+    result = cli_runner.invoke(cli, ["sync"], input="n\n")
+
+    assert "rename it to opencode.json" in result.output
+    assert not config_file.exists()
+    assert config_file.with_name("opencode.json.new").exists()
+
+
+def test_prompt_can_be_accepted_and_the_original_is_backed_up(cli_runner, reviewer, config_file):
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text('{"model": "old"}\n')
+
+    result = cli_runner.invoke(cli, ["sync"], input="y\n")
+
+    assert "Updated ~/.config/opencode/opencode.json." in result.output
+    assert "The original is saved as ~/.config/opencode/opencode.json.idea-oc.bak." in result.output
+    assert config_file.with_name("opencode.json.idea-oc.bak").read_text() == '{"model": "old"}\n'
+    assert json.loads(config_file.read_text())["model"].endswith("sonnet-5-5")
+
+
+def test_the_prompt_defaults_to_no(cli_runner, reviewer, config_file):
+    result = cli_runner.invoke(cli, ["sync"], input="\n")
+
     assert "Not changed" in result.output
-    assert '"paths"' in result.output
     assert not config_file.exists()
 
 
-def test_prompt_can_be_accepted(cli_runner, reviewer, config_file):
-    result = cli_runner.invoke(cli, ["sync"], input="y\n")
+def test_a_later_accepted_sync_removes_the_old_proposal(cli_runner, reviewer, config_file):
+    cli_runner.invoke(cli, ["sync"], input="n\n")
+    proposal = config_file.with_name("opencode.json.new")
+    assert proposal.exists()
 
-    assert "Registered." in result.output
-    assert config_file.exists()
+    cli_runner.invoke(cli, ["sync", "--yes"])
+
+    assert not proposal.exists()
+
+
+def test_a_proposal_is_removed_once_the_config_matches(cli_runner, reviewer, config_file):
+    cli_runner.invoke(cli, ["sync", "--yes"])
+    proposal = config_file.with_name("opencode.json.new")
+    proposal.write_text("stale")
+
+    cli_runner.invoke(cli, ["sync"])
+
+    assert not proposal.exists()
 
 
 def test_non_interactive_without_yes_leaves_config_alone(cli_runner, reviewer, config_file):
@@ -91,7 +145,7 @@ def test_commented_config_is_updated_and_its_comments_kept(cli_runner, reviewer,
     assert result.exit_code == 0, result.output
     text = config_file.read_text()
     assert "// hi" in text and "// keep" in text
-    assert '"model": "m", // keep' in text
+    assert '"model": "amazon-bedrock/eu.anthropic.claude-sonnet-5-5", // keep' in text
     assert "skills" in text
 
 
@@ -113,8 +167,9 @@ def test_dry_run_writes_nothing_and_does_not_prompt(cli_runner, reviewer, store_
     assert result.exit_code == 0
     assert "Would install to" in result.output
     assert "Dry run, nothing written: 2 installed" in result.output
-    assert "Would ask to register" in result.output
-    assert "Registered." not in result.output
+    assert "Would create" in result.output
+    assert "Dry run, nothing written." in result.output
+    assert "Updated" not in result.output
     assert not store_dir.exists()
     assert not config_file.exists()
 

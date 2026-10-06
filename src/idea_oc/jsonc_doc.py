@@ -142,6 +142,23 @@ def _insert_after(obj: nodes.JSONObject, index: int, key: nodes.Key, value: node
     obj.values.insert(index + 1, value)
 
 
+def _insert_first(obj: nodes.JSONObject, key: nodes.Key, value: nodes.Value) -> None:
+    """Insert a member before all the others (``obj`` must not be empty)."""
+    old_first = obj.keys[0]
+    indent = _inner_indent(obj)
+    before = obj.leading_wsc
+    if indent is not None:  # multi-line: the new member takes the line, the old first member keeps its comments
+        line_start = before[-1] if before and isinstance(before[-1], str) else "\n" + indent
+        obj.leading_wsc = [line_start]
+        old_first.wsc_before = before
+    else:
+        old_first.wsc_before = [" "]
+    key.wsc_before = []
+    value.wsc_before, value.wsc_after = [" "], []
+    obj.keys.insert(0, key)
+    obj.values.insert(0, value)
+
+
 class JsoncDocument:
     """A parsed JSONC file whose edits keep comments and formatting."""
 
@@ -191,11 +208,12 @@ class JsoncDocument:
             current = current[name]
         return copy.deepcopy(current)
 
-    def set(self, path: KeyPath, value: Any, *, after: str | None = None) -> None:
+    def set(self, path: KeyPath, value: Any, *, after: str | None = None, first: bool = False) -> None:
         """Set the value at ``path``, creating the key (and any parent objects) if needed.
 
         A new key goes at the end of its object, or straight after the sibling named
-        ``after`` if that exists. An existing key keeps its position.
+        ``after`` if that exists, or at the very start if ``first`` is set. An existing key
+        keeps its position.
 
         Raises:
             JsoncError: If a parent on the path exists but is not an object, or if the
@@ -208,6 +226,8 @@ class JsoncDocument:
         if len(missing) > 1:  # create the missing parents in one go
             value = self._nest(missing[1:], value)
         name, parent_path = missing[0], existing
+        if len(missing) > 1:  # `after` and `first` describe the final key, not a parent we are creating
+            after, first = None, False
 
         obj, outer = self._container(parent_path)
         inner = _inner_indent(obj) or outer + self._step
@@ -219,11 +239,16 @@ class JsoncDocument:
             self._expected_parent(parent_path)[name] = copy.deepcopy(value)
         else:
             anchor = _index(obj, after) if after is not None else None
-            if anchor is None or anchor == len(obj.keys) - 1:
+            if first and obj.keys:
+                _insert_first(obj, _key_node(name), _node(value, inner, self._step))
+                position = 0
+            elif anchor is None or anchor == len(obj.keys) - 1:
                 _append(obj, _key_node(name), _node(value, inner, self._step), outer, self._step)
+                position = None
             else:
                 _insert_after(obj, anchor, _key_node(name), _node(value, inner, self._step))
-            self._insert_expected(parent_path, name, value, after if anchor is not None else None)
+                position = anchor + 1
+            self._insert_expected(parent_path, name, value, position)
         self._verify()
 
     def append(self, path: KeyPath, item: Any) -> None:
@@ -277,11 +302,10 @@ class JsoncDocument:
             current = current[name]
         return current
 
-    def _insert_expected(self, parent_path: KeyPath, name: str, value: Any, after: str | None) -> None:
+    def _insert_expected(self, parent_path: KeyPath, name: str, value: Any, position: int | None) -> None:
         parent = self._expected_parent(parent_path)
         items = list(parent.items())
-        at = len(items) if after is None else [k for k, _ in items].index(after) + 1
-        items.insert(at, (name, copy.deepcopy(value)))
+        items.insert(len(items) if position is None else position, (name, copy.deepcopy(value)))
         parent.clear()
         parent.update(items)
 

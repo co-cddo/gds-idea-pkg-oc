@@ -42,7 +42,9 @@ EOF
 ]
 ```
 
-The [preferred config](../reference/preferred-config.md) already has this entry.
+The [preferred config](../reference/preferred-config.md) file already has this entry. If you used
+`idea-oc sync config` to create your config instead, add it yourself: that command never changes
+plugins.
 
 ## Recommended plugins
 

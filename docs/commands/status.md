@@ -26,8 +26,12 @@ a hook or CI.
 
 **Config** (works offline)
 
-- Whether the skill folder is registered in your OpenCode config, and whether the config can be
-  read.
+- The differences between your OpenCode config and the team's
+  [preferred config](../reference/preferred-config.md), listed as `sync config` would show them. Run
+  `idea-oc sync config` to review and apply them.
+- Whether the config can be read.
+- **Heads up** lines for team permission rules that a rule in your own config stops from working.
+  These are shown for information and do not make `status` fail.
 
 ## Options
 

@@ -1,14 +1,16 @@
 # idea-oc
 
 `idea-oc` installs the GDS IDEA team's approved [OpenCode](https://opencode.ai) agent skills on your
-machine and registers them with OpenCode, so everyone works from the same set.
+machine, and checks your OpenCode config against the team's preferred setup, so everyone works from
+the same set.
 
 It keeps your own setup out of the way:
 
 - Team skills go in their own folder, separate from your personal skills.
 - Your personal skills are never touched. If you have one with the same name as a team skill, the
   team skill wins, and `idea-oc status` tells you.
-- Nothing is written to your OpenCode config without showing you the change first.
+- Nothing is written to your OpenCode config without showing you the change first and asking. If
+  you say no, it saves what it would have changed as a `.new` file for you to merge yourself.
 
 ## Install
 
@@ -26,8 +28,8 @@ idea-oc --version
 idea-oc sync
 ```
 
-This installs the approved skills, then registers the skills folder in your OpenCode config. It asks
-before it changes the config. Restart OpenCode afterwards to pick the skills up.
+This installs the approved skills, then shows how your OpenCode config differs from the team's
+preferred config and asks before changing anything. Restart OpenCode afterwards to pick the skills up.
 
 See [`sync`](commands/sync.md) for the two stages it runs and how to run either on its own.
 

@@ -50,9 +50,19 @@ By default OpenCode starts with a built-in model. The team's
 - the direct Anthropic API disabled, so Bedrock is the only route to Claude,
 - the permission rules described in the next step.
 
-If you do not have an OpenCode config yet, download the
+The easiest way to get it is to let `idea-oc` do it. Install it (see [Install](../index.md#install)),
+then run:
+
+```bash
+idea-oc sync config
+```
+
+It shows what it would add to your config, or create if you have none, and asks before writing.
+It does not add plugins: step 5 covers the one you need.
+
+If you would rather do it by hand, download the
 [preferred config](https://github.com/co-cddo/gds-idea-pkg-oc/blob/main/src/idea_oc/opencode.jsonc)
-into place:
+instead, which includes the plugin entries:
 
 ```bash
 mkdir -p ~/.config/opencode
@@ -62,7 +72,8 @@ curl -fsSL https://raw.githubusercontent.com/co-cddo/gds-idea-pkg-oc/main/src/id
 
 !!! warning
     This replaces `~/.config/opencode/opencode.jsonc` if it exists. If you already have a config,
-    do not overwrite it: open the preferred config alongside yours and bring across what you need.
+    use `idea-oc sync config` instead, or open the preferred config alongside yours and bring across
+    what you need.
 
 ## 4. Permissions
 
@@ -88,7 +99,8 @@ OpenCode can sometimes run scripts that read, and potentially write, other AWS r
 buckets, even with the permissions above. The required plugin makes OpenCode's shell commands keep
 to the `bedrockonly` profile instead of reaching for another profile in your AWS config.
 
-Follow [The required plugin](plugins.md#the-required-plugin). The preferred config already lists it.
+Follow [The required plugin](plugins.md#the-required-plugin). `idea-oc sync config` does not add it
+for you.
 
 ## Check your setup
 
