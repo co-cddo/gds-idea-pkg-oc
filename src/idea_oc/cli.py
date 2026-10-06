@@ -35,3 +35,22 @@ def sync(ctx: click.Context, dry_run: bool, prune: bool, yes: bool):
     from idea_oc.commands import run_sync
 
     run_sync(registry_path=ctx.obj["registry_path"], dry_run=dry_run, prune=prune, yes=yes)
+
+
+@cli.command()
+@click.option("--quiet", "-q", is_flag=True, help="Print only problems. The exit code still reports them.")
+@click.pass_context
+def status(ctx: click.Context, quiet: bool):
+    """Check installed skills against the registry (exits 1 if a sync is needed)."""
+    from idea_oc.commands import run_status
+
+    run_status(registry_path=ctx.obj["registry_path"], quiet=quiet)
+
+
+@cli.command("list")
+@click.pass_context
+def list_skills(ctx: click.Context):
+    """Show installed skills and approved sources (works offline)."""
+    from idea_oc.commands import run_list
+
+    run_list(registry_path=ctx.obj["registry_path"])

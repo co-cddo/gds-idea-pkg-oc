@@ -80,6 +80,14 @@ def _frontmatter(name: str, content: bytes) -> dict[str, str]:
     return {key.strip(): value.strip().strip("\"'") for key, sep, value in pairs if sep}
 
 
+def frontmatter_name(content: bytes) -> str | None:
+    """The ``name`` declared in a ``SKILL.md``, or None if it has no readable frontmatter."""
+    try:
+        return _frontmatter("", content).get("name")
+    except PlanError:
+        return None
+
+
 def validate_skill_md(name: str, content: bytes) -> None:
     """Check a ``SKILL.md`` has frontmatter whose ``name`` matches its folder.
 

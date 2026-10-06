@@ -18,6 +18,7 @@ from idea_oc.opencode_config import (
 )
 from idea_oc.planner import PlanError
 from idea_oc.registry import RegistryError, load_registry
+from idea_oc.status import StatusReport, check_status, personal_skill_dirs
 from idea_oc.store import Store, default_store_dir
 from idea_oc.sync import Action, SourcePlan, SyncResult, apply_plans, plan_registry
 
@@ -133,3 +134,76 @@ def run_sync(*, registry_path: Path | None, dry_run: bool, prune: bool, yes: boo
         for error in result.errors:
             click.echo(f"  {error}", err=True)
         raise click.exceptions.Exit(1)
+
+
+def _config_line(report: StatusReport, config_path: Path) -> tuple[bool, str]:
+    """Whether the config is fine, and the line describing it."""
+    if report.config_error:
+        return False, f"could not be read: {report.config_error}"
+    if report.config is ConfigState.REGISTERED:
+        return True, f"ok (skills.paths registered in {_tilde(config_path)})"
+    return False, f"skills.paths is not registered in {_tilde(config_path)} (run: idea-oc sync)"
+
+
+def _echo_status(report: StatusReport, config_path: Path, *, quiet: bool) -> None:
+    def say(line: str = "", *, problem: bool = False) -> None:
+        if problem or not quiet:
+            click.echo(line)
+
+    config_ok, config_line = _config_line(report, config_path)
+    say(f"Config:  {config_line}", problem=not config_ok)
+
+    drifted = [s for s in report.skills if not s.ok]
+    say(f"Skills:  {len(report.skills)} approved, {len(drifted)} need syncing", problem=bool(drifted))
+    for skill in drifted:
+        say(f"  {skill.name:<24} {skill.detail}", problem=True)
+
+    if report.stale:
+        say("Stale:   no longer approved (run: idea-oc sync)", problem=True)
+        for name in report.stale:
+            say(f"  {name}", problem=True)
+
+    if report.shadowed:
+        say("\nShadowing (the team skill overrides your personal skill of the same name):")
+        for shadow in report.shadowed:
+            say(f"  {shadow.name:<24} {_tilde(shadow.path)}")
+
+    for line in report.unchecked:
+        click.echo(f"Could not check upstream, skipped: {line}", err=True)
+
+
+def run_status(*, registry_path: Path | None, quiet: bool) -> None:
+    """Report drift between the store, the registry and the OpenCode config. Exits 1 if a sync is needed."""
+    registry = load_registry_or_fail(registry_path)
+    store = Store(default_store_dir())
+    config_path = default_config_path()
+
+    with GitHubClient(token=get_token()) as client:
+        try:
+            report = check_status(client, registry, store, config_path, personal_skill_dirs(config_path))
+        except PlanError as e:
+            raise click.ClickException(str(e)) from e
+
+    _echo_status(report, config_path, quiet=quiet)
+    if report.problems:
+        raise click.exceptions.Exit(1)
+
+
+def run_list(*, registry_path: Path | None) -> None:
+    """Show the skills installed in the store and the sources the registry approves. Works offline."""
+    registry = load_registry_or_fail(registry_path)
+    store = Store(default_store_dir())
+    installed = store.installed()
+
+    if installed:
+        width = max(len(name) for name in installed)
+        click.echo(f"Installed in {_tilde(store.root)}:")
+        for name, prov in installed.items():
+            click.echo(f"  {name:<{width}}  {prov.repo}  {prov.ref}  ({prov.commit[:7]})")
+    else:
+        click.echo("No skills installed. Run: idea-oc sync")
+
+    click.echo("\nApproved sources:")
+    for source in registry.source:
+        what = f"discover {source.discover}" if source.discover else f"{len(source.skills or [])} named skill(s)"
+        click.echo(f"  {source.repo}  {source.ref}  ({what})")
