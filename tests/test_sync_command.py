@@ -82,16 +82,29 @@ def test_non_interactive_without_yes_leaves_config_alone(cli_runner, reviewer, c
     assert not config_file.exists()
 
 
-def test_config_with_comments_is_not_rewritten(cli_runner, reviewer, config_file):
+def test_commented_config_is_updated_and_its_comments_kept(cli_runner, reviewer, config_file):
     config_file.parent.mkdir(parents=True)
-    config_file.write_text('{\n  // hi\n  "model": "m"\n}\n')
+    config_file.write_text('{\n  // hi\n  "model": "m" // keep\n}\n')
+
+    result = cli_runner.invoke(cli, ["sync", "--yes"])
+
+    assert result.exit_code == 0, result.output
+    text = config_file.read_text()
+    assert "// hi" in text and "// keep" in text
+    assert '"model": "m", // keep' in text
+    assert "skills" in text
+
+
+def test_unparseable_config_is_not_rewritten_and_shows_the_snippet(cli_runner, reviewer, config_file):
+    config_file.parent.mkdir(parents=True)
+    config_file.write_text('{ "model": ')
 
     result = cli_runner.invoke(cli, ["sync", "--yes"])
 
     assert result.exit_code == 0
-    assert "not plain JSON" in result.output
+    assert "cannot edit" in result.output
     assert "Add this yourself" in result.output
-    assert config_file.read_text() == '{\n  // hi\n  "model": "m"\n}\n'
+    assert config_file.read_text() == '{ "model": '
 
 
 def test_dry_run_writes_nothing_and_does_not_prompt(cli_runner, reviewer, store_dir, config_file):

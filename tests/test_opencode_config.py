@@ -4,6 +4,7 @@ import json
 
 import pytest
 
+from idea_oc.jsonc_doc import JsoncDocument
 from idea_oc.opencode_config import (
     ConfigError,
     ConfigState,
@@ -119,11 +120,50 @@ def test_tilde_and_absolute_forms_are_recognised_as_the_same(config, monkeypatch
     assert ensure_skills_path(config, store) is False
 
 
-def test_config_with_comments_is_never_rewritten(config, store):
-    text = '{\n  // my notes\n  "model": "m"\n}\n'
+def test_comments_and_formatting_in_the_config_survive(config, store):
+    text = (
+        "{\n"
+        "  // my notes\n"
+        '  "model": "m", // keep this\n'
+        '  "permission": {\n'
+        '    "bash": { "*": "allow" } /* block */\n'
+        "  }\n"
+        "}\n"
+    )
     write(config, text)
 
-    with pytest.raises(ConfigError, match="not plain JSON"):
+    assert ensure_skills_path(config, store) is True
+
+    updated = config.read_text()
+    assert updated.startswith(text.rstrip().removesuffix("}").rstrip().removesuffix("}"))  # nothing above was touched
+    assert "// my notes" in updated and "// keep this" in updated and "/* block */" in updated
+    assert skills_path_state(config, store) is ConfigState.REGISTERED
+
+
+def test_appends_to_an_existing_commented_paths_list(config, store):
+    write(config, '{\n  "skills": {\n    "paths": [\n      "~/mine" // personal\n    ]\n  }\n}\n')
+
+    ensure_skills_path(config, store)
+
+    text = config.read_text()
+    assert "// personal" in text
+    assert skills_path_state(config, store) is ConfigState.REGISTERED
+    assert JsoncDocument.parse(text).get(("skills", "paths"))[0] == "~/mine"
+
+
+def test_trailing_commas_are_accepted(config, store):
+    write(config, '{\n  "model": "m",\n}\n')
+
+    ensure_skills_path(config, store)
+
+    assert skills_path_state(config, store) is ConfigState.REGISTERED
+
+
+def test_unparseable_config_is_never_rewritten(config, store):
+    text = '{ "model": '
+    write(config, text)
+
+    with pytest.raises(ConfigError, match="cannot edit"):
         ensure_skills_path(config, store)
 
     assert config.read_text() == text
@@ -159,17 +199,22 @@ def test_manual_snippet_is_valid_json(store):
     assert json.loads(manual_snippet(store)) == {"skills": {"paths": [str(store)]}}
 
 
-def test_default_config_path(monkeypatch, tmp_path):
+def test_default_config_path_follows_opencodes_own_order(monkeypatch, tmp_path):
     monkeypatch.delenv("IDEA_OC_CONFIG", raising=False)
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
-    assert default_config_path() == tmp_path / "opencode" / "opencode.json"
+    config_dir = tmp_path / "opencode"
 
-    (tmp_path / "opencode").mkdir()
-    (tmp_path / "opencode" / "opencode.jsonc").write_text("{}")
-    assert default_config_path() == tmp_path / "opencode" / "opencode.jsonc"
+    assert default_config_path() == config_dir / "opencode.jsonc"  # nothing exists: what OpenCode would create
 
-    (tmp_path / "opencode" / "opencode.json").write_text("{}")
-    assert default_config_path() == tmp_path / "opencode" / "opencode.json"
+    config_dir.mkdir()
+    (config_dir / "config.json").write_text("{}")
+    assert default_config_path() == config_dir / "config.json"
+
+    (config_dir / "opencode.json").write_text("{}")
+    assert default_config_path() == config_dir / "opencode.json"
+
+    (config_dir / "opencode.jsonc").write_text("{}")
+    assert default_config_path() == config_dir / "opencode.jsonc"  # wins when both exist
 
     monkeypatch.setenv("IDEA_OC_CONFIG", str(tmp_path / "x.json"))
     assert default_config_path() == tmp_path / "x.json"

@@ -110,8 +110,17 @@ def test_removed_config_entry_is_reported(cli_runner, synced, config_file):
     assert "skills.paths is not registered" in result.output
 
 
+def test_commented_config_is_read_correctly(cli_runner, synced, config_file):
+    config_file.write_text(config_file.read_text().replace("{", "{ // a comment", 1))
+
+    result = cli_runner.invoke(cli, ["status"])
+
+    assert result.exit_code == 0
+    assert "Config:  ok" in result.output
+
+
 def test_unreadable_config_is_reported(cli_runner, synced, config_file):
-    config_file.write_text("{ // comment\n}")
+    config_file.write_text("{ not json")
 
     result = cli_runner.invoke(cli, ["status"])
 
