@@ -29,6 +29,18 @@ config` shows exactly what it will change, asks you yes or no, and saves a backu
 If you only run `sync skills`, the skills are installed but OpenCode will not see them until
 you run `idea-oc sync config` once. Plain `idea-oc sync` runs both stages for you.
 
+## Preferred OpenCode config
+
+The team's preferred OpenCode configuration is kept in
+[`src/idea_oc/opencode.jsonc`](src/idea_oc/opencode.jsonc): the Bedrock provider and model, the
+recommended plugins, and the `permission` rules that guard commands such as `gh pr merge`,
+`git push` and `rm -rf`. Use it as the reference when setting up OpenCode, or compare it with
+your own `~/.config/opencode/opencode.jsonc`.
+
+Permission rules are read top to bottom and the **last matching rule wins**, so the order of the
+`bash` rules matters: keep the `"*"` catch-all first and put more specific rules below the
+general ones they refine.
+
 ## Prerequisites
 
 - [uv](https://docs.astral.sh/uv/) for Python package management

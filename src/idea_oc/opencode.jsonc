@@ -1,0 +1,48 @@
+// GDS IDEA team preferred OpenCode config.
+// Copy this to ~/.config/opencode/opencode.jsonc as a starting point.
+// Setup guide: https://co-cddo.github.io/gds-idea-pkg-oc/guides/setup/
+// "./plugin-scripts/inject-env.js" is the REQUIRED plugin script; see the plugins guide:
+// https://co-cddo.github.io/gds-idea-pkg-oc/guides/plugins/
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "amazon-bedrock": {
+      "options": {
+        "region": "eu-west-2",
+        "profile": "bedrockonly"
+      }
+    }
+  },
+  "model": "amazon-bedrock/eu.anthropic.claude-sonnet-5-5",
+  "disabled_providers": ["anthropic"],
+  "plugin": [
+    ["./plugin-scripts/inject-env.js", { "AWS_PROFILE": "bedrockonly" }],
+    "@tarquinen/opencode-dcp@latest",
+    "envsitter-guard",
+    "opencode-snip",
+    "cc-safety-net"
+  ],
+  "permission": {
+    "bash": {
+      "*": "allow",
+      "cdk deploy*": "ask", //Stop AI deploying whatever it wants
+      "cdk destroy*": "deny", //Stop AI destroying without review
+      "git push *": "ask", //Confirm before any push to a remote, including a force-push after a rebase
+      "git reset --hard*": "deny", //Stop AI resetting your local repo
+      "rm -rf*": "deny", //Stop AI deleting files without warning
+      "sudo *": "ask", //Require a check before AI gets elevated privileges
+      "gh pr *": "ask", //Default: confirm before any PR action
+      "gh pr create *": "deny", //Blocks creating a non-draft PR outright
+      "gh pr create --draft*": "ask", //Draft PRs are the only kind the agent can open, and still requires confirmation
+      "gh pr merge *": "deny", //Merging is annoying to undo — blocked outright
+      "gh pr ready *": "deny", //Blocks taking a PR out of draft — review still required before a PR goes live
+      "gh pr close *": "ask" //Confirm before closing a PR
+    },
+    "external_directory": {
+      "*": "ask" //Pause before AI reads/writes anything outside this project
+    },
+    "edit": {
+      "*": "ask" //Show every file write before it happens, so nothing lands without a look
+    }
+  }
+}
