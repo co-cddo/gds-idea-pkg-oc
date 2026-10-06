@@ -26,6 +26,7 @@ def isolated_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("IDEA_OC_STORE", str(home / ".local" / "share" / "idea-oc" / "skills"))
     monkeypatch.setenv("IDEA_OC_CONFIG", str(home / ".config" / "opencode" / "opencode.json"))
     monkeypatch.setenv("GH_TOKEN", "test-token")
+    monkeypatch.setenv("IDEA_OC_NO_VERSION_CHECK", "1")  # tests that exercise the check clear this
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
     return home

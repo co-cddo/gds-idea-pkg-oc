@@ -21,6 +21,7 @@ from idea_oc.registry import RegistryError, load_registry
 from idea_oc.status import StatusReport, check_status, personal_skill_dirs
 from idea_oc.store import Store, default_store_dir
 from idea_oc.sync import Action, SourcePlan, SyncResult, apply_plans, plan_registry
+from idea_oc.version import check_for_update
 
 _SYMBOLS = {Action.ADDED: "+", Action.UPDATED: "~"}
 
@@ -106,6 +107,7 @@ def _offer_registration(store_dir: Path, *, yes: bool) -> None:
 
 def run_sync(*, registry_path: Path | None, dry_run: bool, prune: bool, yes: bool) -> None:
     """Install the registry's skills into the store and register the store with OpenCode."""
+    check_for_update()
     registry = load_registry_or_fail(registry_path)
     store = Store(default_store_dir())
 
@@ -174,6 +176,7 @@ def _echo_status(report: StatusReport, config_path: Path, *, quiet: bool) -> Non
 
 def run_status(*, registry_path: Path | None, quiet: bool) -> None:
     """Report drift between the store, the registry and the OpenCode config. Exits 1 if a sync is needed."""
+    check_for_update(quiet=quiet)
     registry = load_registry_or_fail(registry_path)
     store = Store(default_store_dir())
     config_path = default_config_path()
