@@ -10,14 +10,20 @@ idea-oc status --quiet    # print only problems
 ```
 
 `status` exits with **1** if a sync is needed and **0** if everything is in order, so it can run from
-a hook or CI.
+a hook or CI. An available update counts as a sync being needed.
 
 ## What it reports
 
 **Skills** (needs the network, but downloads no files)
 
-- Each approved skill that is not installed, or whose files differ from the source: changed,
-  missing or extra files.
+- Each approved skill that is not installed, or that differs from the latest release. It says why:
+  - **`update available: v0.6.5 -> v0.6.6`**: the source has released a newer version and your copy is
+    the older one you installed. Nothing is wrong. Run `idea-oc sync skills` to update.
+  - **`1 changed locally`** (or `missing` or `extra`): files in the skill folder differ from the
+    version you installed, so someone edited them. A sync restores them.
+  - Both can be shown together: `1 changed locally; update available: v0.6.5 -> v0.6.6`.
+  - **`differs from the latest release`**: shown only when the version you installed can no longer be
+    read, so `idea-oc` cannot tell an edit from an update.
 - Skills in the skill folder that are no longer approved.
 - **Shadowing**: personal skills, found in `~/.config/opencode/skills`, `~/.claude/skills` and
   `~/.agents/skills`, that have the same name as a team skill. The team skill overrides yours.

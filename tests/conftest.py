@@ -57,16 +57,19 @@ class FakeGitHub:
 
     def __init__(self):
         self.repos: dict[str, dict] = {}
+        self.history: dict[str, dict[str, dict]] = {}  # repo -> commit sha -> the repo's files at that commit
         self.requests: list[str] = []
 
     def add_repo(self, repo: str, files: dict[str, bytes | str], *, tag: str | None = "v1.0.0", modes=None):
         """Create or update a repo. ``tag=None`` makes a repo with no releases (default branch only)."""
         files = {path: data.encode() if isinstance(data, str) else data for path, data in files.items()}
         self.repos[repo] = {"files": files, "tag": tag, "modes": modes or {}}
+        self.history.setdefault(repo, {})[self.commit_sha(repo)] = self.repos[repo]
 
     def commit_sha(self, repo: str) -> str:
         info = self.repos[repo]
-        return hashlib.sha1(f"{repo}@{info['tag'] or 'main'}:{sorted(info['files'])}".encode()).hexdigest()  # noqa: S324
+        content = sorted((path, git_blob_sha(data)) for path, data in info["files"].items())
+        return hashlib.sha1(f"{repo}@{info['tag'] or 'main'}:{content}".encode()).hexdigest()  # noqa: S324
 
     def blob_requests(self) -> list[str]:
         return [r for r in self.requests if "/git/blobs/" in r]
@@ -92,12 +95,14 @@ class FakeGitHub:
                 return httpx.Response(404, json={})
             return httpx.Response(200, json={"sha": self.commit_sha(repo)})
         if rest.startswith("/git/trees/"):
-            return httpx.Response(200, json=self._tree(info))
+            snapshot = self.history[repo].get(rest.removeprefix("/git/trees/"))
+            return httpx.Response(200, json=self._tree(snapshot)) if snapshot else httpx.Response(404, json={})
         if rest.startswith("/git/blobs/"):
             sha = rest.removeprefix("/git/blobs/")
-            for data in info["files"].values():
-                if git_blob_sha(data) == sha:
-                    return httpx.Response(200, content=data)
+            for snapshot in self.history[repo].values():
+                for data in snapshot["files"].values():
+                    if git_blob_sha(data) == sha:
+                        return httpx.Response(200, content=data)
         return httpx.Response(404, json={})
 
     @staticmethod
