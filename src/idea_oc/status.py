@@ -7,12 +7,12 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from idea_oc.github import GitHubClient
+from idea_oc.github import GitHubClient, GitHubError, TreeEntry
 from idea_oc.models import Registry
 from idea_oc.opencode_config import ConfigError, plan_config
-from idea_oc.planner import SKILL_FILE, PlannedSkill, frontmatter_name
+from idea_oc.planner import SKILL_FILE, PlanError, PlannedSkill, frontmatter_name, plan_source
 from idea_oc.store import SkillDiff, Store
-from idea_oc.sync import plan_registry
+from idea_oc.sync import SourcePlan, plan_registry
 from idea_oc.team_config import Change
 
 
@@ -20,34 +20,52 @@ from idea_oc.team_config import Change
 class SkillStatus:
     """How one approved skill compares with its installed copy.
 
+    A difference from the latest release can mean two different things: the user edited the files, or
+    upstream has a newer version. ``local`` and ``update`` tell them apart.
+
     Attributes:
         name: Skill name.
         installed: Whether a folder for it exists in the store.
-        diff: File-level differences from the source (clean means identical).
+        diff: Differences from the latest release (clean means identical).
+        local: Differences from the version that was installed, which are the user's own changes.
+            None when that version could not be checked.
+        update: (installed ref, latest ref) when upstream has moved on since the skill was installed.
     """
 
     name: str
     installed: bool
     diff: SkillDiff
+    local: SkillDiff | None = None
+    update: tuple[str, str] | None = None
 
     @property
     def ok(self) -> bool:
         return self.installed and self.diff.clean
 
     @property
+    def edited(self) -> bool:
+        """True when the files in the store differ from the version that was installed."""
+        return self.local is not None and not self.local.clean
+
+    @property
     def detail(self) -> str:
         if not self.installed:
             return "not installed"
-        parts = [
-            f"{len(files)} {label}"
-            for files, label in (
-                (self.diff.changed, "changed"),
-                (self.diff.missing, "missing"),
-                (self.diff.extra, "extra"),
-            )
-            if files
-        ]
-        return ", ".join(parts) + " locally"
+        parts = []
+        if self.local is None:
+            parts.append(f"differs from the latest release ({_counts(self.diff)})")
+        elif self.edited:
+            parts.append(f"{_counts(self.local)} locally")
+        if self.update:
+            installed, latest = self.update
+            parts.append(f"update available: {installed} -> {latest}")
+        return "; ".join(parts)
+
+
+def _counts(diff: SkillDiff) -> str:
+    """'1 changed, 2 extra' for the non-empty parts of ``diff``."""
+    counts = {"changed": diff.changed, "missing": diff.missing, "extra": diff.extra}
+    return ", ".join(f"{len(files)} {label}" for label, files in counts.items() if files)
 
 
 @dataclass(frozen=True)
@@ -141,9 +159,41 @@ def find_shadowed(names: set[str], dirs: list[Path], *, ignore: Path) -> list[Sh
     return sorted(found, key=lambda s: (s.name, str(s.path)))
 
 
-def _skill_status(store: Store, skill: PlannedSkill) -> SkillStatus:
+class _InstalledVersions:
+    """Looks up what a skill was at the commit it was installed from, fetching each tree at most once."""
+
+    def __init__(self, client: GitHubClient):
+        self._client = client
+        self._trees: dict[tuple[str, str], list[TreeEntry]] = {}
+
+    def skill_at(self, plan: SourcePlan, name: str, commit: str) -> PlannedSkill | None:
+        """The skill as it was at ``commit``, or None if that cannot be worked out."""
+        key = (plan.source.repo, commit)
+        try:
+            if key not in self._trees:
+                self._trees[key] = self._client.get_tree(plan.source.repo, commit)
+            then = plan_source(plan.source, self._trees[key])
+        except (GitHubError, PlanError):
+            return None
+        return next((skill for skill in then if skill.name == name), None)
+
+
+def _skill_status(store: Store, plan: SourcePlan, skill: PlannedSkill, versions: _InstalledVersions) -> SkillStatus:
+    """Compare one skill with the latest release, and work out whether a difference is an edit or an update."""
     installed = store.skill_dir(skill.name).is_dir()
-    return SkillStatus(skill.name, installed, store.diff(skill))
+    diff = store.diff(skill)
+    if not installed or diff.clean:
+        return SkillStatus(skill.name, installed, diff)
+
+    origin = store.installed().get(skill.name)
+    if origin is None or plan.resolved is None:
+        return SkillStatus(skill.name, installed, diff)
+    if origin.commit == plan.resolved.sha:  # nothing upstream has changed, so every difference is local
+        return SkillStatus(skill.name, installed, diff, local=diff)
+
+    update = (origin.ref, plan.resolved.name)
+    then = versions.skill_at(plan, skill.name, origin.commit)
+    return SkillStatus(skill.name, installed, diff, local=store.diff(then) if then else None, update=update)
 
 
 def check_skills(
@@ -158,7 +208,8 @@ def check_skills(
         PlanError: If two sources provide a skill with the same name.
     """
     plans = plan_registry(client, registry)
-    skills = [_skill_status(store, skill) for plan in plans for skill in plan.skills]
+    versions = _InstalledVersions(client)
+    skills = [_skill_status(store, plan, skill, versions) for plan in plans for skill in plan.skills]
     names = {s.name for s in skills} | set(store.installed())
     unchecked = [p.message for p in plans if p.message]
 

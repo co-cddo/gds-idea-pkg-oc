@@ -7,7 +7,8 @@ from pathlib import Path
 import pytest
 
 from idea_oc.cli import cli
-from idea_oc.status import find_shadowed
+from idea_oc.status import SkillStatus, find_shadowed
+from idea_oc.store import SkillDiff
 from tests.conftest import skill_md
 
 REVIEWER = "co-cddo/gds-idea-ai-reviewer"
@@ -217,3 +218,154 @@ def test_find_shadowed_follows_symlinked_skill_folders(tmp_path):
 def test_config_written_by_sync_is_what_status_expects(cli_runner, synced, config_file):
     assert json.loads(config_file.read_text())["skills"]["paths"]
     assert cli_runner.invoke(cli, ["status"]).exit_code == 0
+
+
+# --- an upstream update is not a local edit ---------------------------------------------------
+
+
+def release_two(github, *, names=("cdk-review", "readme-review"), changed=("cdk-review",)):
+    """Publish v0.1.23 of the reviewer repo, with the skills in ``changed`` edited upstream."""
+    files = {f"{ROOT}/{n}/SKILL.md": skill_md(n, body="newer text" if n in changed else "Body") for n in names}
+    github.add_repo(REVIEWER, files, tag="v0.1.23")
+
+
+def tree_requests(github) -> list[str]:
+    return [path for path in github.requests if "/git/trees/" in path]
+
+
+def test_a_newer_upstream_release_is_reported_as_an_update_not_a_local_edit(cli_runner, synced):
+    release_two(synced)
+
+    result = cli_runner.invoke(cli, ["status", "skills"])
+
+    assert result.exit_code == 1
+    assert "update available: v0.1.22 -> v0.1.23" in result.output
+    assert "locally" not in result.output
+    assert "readme-review" not in result.output  # the skill that did not change is not mentioned
+
+
+def test_an_update_clears_once_synced(cli_runner, synced):
+    release_two(synced)
+    cli_runner.invoke(cli, ["sync", "skills"])
+
+    result = cli_runner.invoke(cli, ["status", "skills"])
+
+    assert result.exit_code == 0
+    assert "update available" not in result.output
+
+
+def test_a_local_edit_with_nothing_new_upstream_is_a_local_edit(cli_runner, synced, store_dir):
+    edited = store_dir / "cdk-review" / "SKILL.md"
+    edited.chmod(0o644)
+    edited.write_text("tampered")
+
+    result = cli_runner.invoke(cli, ["status", "skills"])
+
+    assert "1 changed locally" in result.output
+    assert "update available" not in result.output
+    assert len(tree_requests(synced)) == 1  # no history lookup was needed: nothing moved upstream
+
+
+def test_a_local_edit_is_still_reported_when_upstream_has_also_moved_on(cli_runner, synced, store_dir):
+    release_two(synced)
+    edited = store_dir / "cdk-review" / "SKILL.md"
+    edited.chmod(0o644)
+    edited.write_text("tampered")
+
+    result = cli_runner.invoke(cli, ["status", "skills"])
+
+    assert "cdk-review" in result.output
+    assert "1 changed locally; update available: v0.1.22 -> v0.1.23" in result.output
+
+
+def test_an_extra_file_is_a_local_change_even_when_an_update_is_available(cli_runner, synced, store_dir):
+    release_two(synced)
+    (store_dir / "cdk-review" / "notes.md").write_text("mine")
+
+    result = cli_runner.invoke(cli, ["status", "skills"])
+
+    assert "1 extra locally; update available: v0.1.22 -> v0.1.23" in result.output
+
+
+def test_an_update_is_not_blamed_on_the_user_when_the_old_version_cannot_be_checked(cli_runner, synced):
+    release_two(synced)
+    synced.history[REVIEWER].clear()  # the old commit can no longer be read
+    synced.history[REVIEWER][synced.commit_sha(REVIEWER)] = synced.repos[REVIEWER]
+
+    result = cli_runner.invoke(cli, ["status", "skills"])
+
+    assert result.exit_code == 1
+    assert "differs from the latest release (1 changed); update available: v0.1.22 -> v0.1.23" in result.output
+    assert "locally" not in result.output
+
+
+def test_a_machine_that_is_in_sync_makes_no_history_requests(cli_runner, synced):
+    result = cli_runner.invoke(cli, ["status", "skills"])
+
+    assert result.exit_code == 0
+    assert len(tree_requests(synced)) == 1  # only the latest release's tree
+
+
+def test_the_history_of_a_commit_is_fetched_once_however_many_skills_changed(cli_runner, synced):
+    release_two(synced, changed=("cdk-review", "readme-review"))
+
+    result = cli_runner.invoke(cli, ["status", "skills"])
+
+    assert result.output.count("update available") == 2
+    assert len(tree_requests(synced)) == 2  # the latest tree, and the installed commit's tree once
+
+
+def test_status_still_exits_1_for_an_update_so_hooks_prompt_a_sync(cli_runner, synced):
+    release_two(synced)
+
+    assert cli_runner.invoke(cli, ["status", "skills", "--quiet"]).exit_code == 1
+
+
+def test_quiet_status_still_shows_the_update(cli_runner, synced):
+    release_two(synced)
+
+    result = cli_runner.invoke(cli, ["status", "skills", "--quiet"])
+
+    assert "update available" in result.output
+
+
+# --- the wording of one skill's status --------------------------------------------------------
+
+CLEAN = SkillDiff()
+ONE_CHANGED = SkillDiff(changed=("SKILL.md",))
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (SkillStatus("a", False, ONE_CHANGED), "not installed"),
+        (SkillStatus("a", True, ONE_CHANGED, local=ONE_CHANGED), "1 changed locally"),
+        (
+            SkillStatus(
+                "a",
+                True,
+                SkillDiff(missing=("x",), extra=("y", "z")),
+                local=SkillDiff(missing=("x",), extra=("y", "z")),
+            ),
+            "1 missing, 2 extra locally",
+        ),
+        (SkillStatus("a", True, ONE_CHANGED, local=CLEAN, update=("v1", "v2")), "update available: v1 -> v2"),
+        (
+            SkillStatus("a", True, ONE_CHANGED, local=ONE_CHANGED, update=("v1", "v2")),
+            "1 changed locally; update available: v1 -> v2",
+        ),
+        (
+            SkillStatus("a", True, ONE_CHANGED, local=None, update=("v1", "v2")),
+            "differs from the latest release (1 changed); update available: v1 -> v2",
+        ),
+        (SkillStatus("a", True, ONE_CHANGED), "differs from the latest release (1 changed)"),
+    ],
+)
+def test_skill_status_wording(status, expected):
+    assert status.detail == expected
+
+
+def test_only_a_real_edit_counts_as_edited():
+    assert SkillStatus("a", True, ONE_CHANGED, local=ONE_CHANGED).edited
+    assert not SkillStatus("a", True, ONE_CHANGED, local=CLEAN, update=("v1", "v2")).edited
+    assert not SkillStatus("a", True, ONE_CHANGED, local=None).edited
