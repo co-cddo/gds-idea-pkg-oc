@@ -16,6 +16,7 @@ from pathlib import Path
 
 from idea_oc.jsonc_doc import JsoncDocument, JsoncError
 from idea_oc.profiles import ProfilesError, TeamChoice, choose_team, load_profiles
+from idea_oc.prompts import PromptState, prompt_state, references_prompt, write_prompt
 from idea_oc.team_config import SKILLS_PATH, Plan, apply_changes, desired_config, plan_changes
 
 # The order OpenCode itself looks for the global config in: the first one that exists is its "main" file.
@@ -45,12 +46,34 @@ class ConfigPlan:
         plan: The changes needed.
         exists: Whether the config file exists.
         team: Which team's inference profile the config is being compared against, and why.
+        prompt: How the prompt file next to the config compares with the bundled one.
     """
 
     document: JsoncDocument
     plan: Plan
     exists: bool
     team: TeamChoice
+    prompt: PromptState
+
+    @property
+    def prompt_action(self) -> str | None:
+        """What must happen to the prompt file: ``add`` or ``update`` it, or None if it is fine.
+
+        Only matters if the config will refer to the file, since OpenCode will not start if a file it is
+        told to read is missing.
+        """
+        if not self.plan.uses_prompt_file:
+            return None
+        return {PromptState.MISSING: "add", PromptState.DIFFERENT: "update", PromptState.CURRENT: None}[self.prompt]
+
+    @property
+    def pending(self) -> bool:
+        return self.plan.pending or self.prompt_action is not None
+
+    @property
+    def broken(self) -> bool:
+        """True when the config as it stands refers to the prompt file and the file is missing."""
+        return references_prompt(self.document.data) and self.prompt is PromptState.MISSING
 
 
 def default_config_path() -> Path:
@@ -134,7 +157,7 @@ def plan_config(config_path: Path, store_dir: Path, team: str | None = None) -> 
         plan = plan_changes(document, store_dir, store_config_value(store_dir), desired)
     except (JsoncError, ProfilesError) as e:
         raise ConfigError(f"{config_path}: {e}") from e
-    return ConfigPlan(document, plan, config_path.exists(), choice)
+    return ConfigPlan(document, plan, config_path.exists(), choice, prompt_state(config_path))
 
 
 def _render(config: ConfigPlan, config_path: Path) -> str:
@@ -155,27 +178,39 @@ def _write_atomically(path: Path, text: str) -> None:
 def apply_plan(config: ConfigPlan, config_path: Path) -> None:
     """Apply the changes to the config file, saving a backup of the original first.
 
-    Any earlier proposal (``.new`` file) is removed, since it is now out of date.
+    The prompt file the config refers to is written first, so the config never refers to a file that is
+    not there. Any earlier proposal (``.new`` file) is removed, since it is now out of date.
 
     Raises:
-        ConfigError: If the edits cannot be made safely. The file is not touched in that case.
+        ConfigError: If the edits cannot be made safely. Nothing is touched in that case.
     """
     text = _render(config, config_path)
+    if config.prompt_action:
+        write_prompt(config_path)
     if config.exists:
         shutil.copy2(config_path, backup_path(config_path))
     _write_atomically(config_path, text)
     clear_proposal(config_path)
 
 
-def write_proposal(config: ConfigPlan, config_path: Path) -> Path:
+def write_proposal(config: ConfigPlan, config_path: Path) -> tuple[Path, Path | None]:
     """Save the config with the changes applied next to the original, for the user to merge by hand.
+
+    If the proposed config refers to the prompt file and it is missing, the file is saved too, so that
+    merging the proposal cannot leave OpenCode unable to start. An existing prompt file is never replaced
+    here, because the user has not agreed to the changes.
+
+    Returns:
+        The proposal, and the prompt file if one was saved.
 
     Raises:
         ConfigError: If the edits cannot be made safely.
     """
+    text = _render(config, config_path)
+    saved = write_prompt(config_path) if config.plan.uses_prompt_file and config.prompt is PromptState.MISSING else None
     path = proposal_path(config_path)
-    _write_atomically(path, _render(config, config_path))
-    return path
+    _write_atomically(path, text)
+    return path, saved
 
 
 def clear_proposal(config_path: Path) -> None:

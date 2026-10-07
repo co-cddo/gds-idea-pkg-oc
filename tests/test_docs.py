@@ -111,3 +111,23 @@ def test_the_plugins_the_docs_recommend_are_the_ones_in_the_preferred_config():
     for plugin in listed:
         name = plugin.rsplit("@", 1)[0] if plugin.startswith("@") and plugin.count("@") > 1 else plugin
         assert Path(name).name in docs, f"{plugin} is in the preferred config but not in the plugins guide"
+
+
+def test_files_the_docs_tell_people_to_download_exist_in_the_repo():
+    """The by-hand setup curls files from the repo, so a renamed or moved file would break it quietly."""
+    pattern = r"raw\.githubusercontent\.com/co-cddo/gds-idea-pkg-oc/main/([^\s\\]+)"
+    missing = [
+        f"{page.relative_to(ROOT)} -> {path}"
+        for page in [*DOCS.rglob("*.md"), ROOT / "README.md"]
+        for path in re.findall(pattern, page.read_text())
+        if not (ROOT / path).exists()
+    ]
+
+    assert missing == []
+
+
+def test_the_manual_setup_downloads_both_the_config_and_the_prompt_it_needs():
+    setup = (DOCS / "guides" / "setup.md").read_text()
+
+    assert "src/idea_oc/opencode.jsonc" in setup
+    assert "src/idea_oc/prompts/anthropic.txt" in setup  # OpenCode will not start without it

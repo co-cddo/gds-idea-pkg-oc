@@ -110,6 +110,8 @@ class ConfigReport:
         exists: Whether the config file exists.
         error: Why the config could not be read, if it could not.
         team: Which team's inference profile the config was compared against, and why.
+        prompt_action: ``add`` or ``update`` when the prompt file next to the config needs writing.
+        broken: The config refers to the prompt file and the file is missing, so OpenCode will not start.
     """
 
     changes: list[Change] = field(default_factory=list)
@@ -118,11 +120,13 @@ class ConfigReport:
     exists: bool = True
     error: str | None = None
     team: TeamChoice | None = None
+    prompt_action: str | None = None
+    broken: bool = False
 
     @property
     def problems(self) -> bool:
         """True when something needs ``idea-oc sync config``."""
-        return bool(self.error or self.changes)
+        return bool(self.error or self.changes or self.prompt_action)
 
 
 def personal_skill_dirs(config_path: Path) -> list[Path]:
@@ -231,4 +235,12 @@ def check_config(config_path: Path, store_dir: Path, team: str | None = None) ->
     except ConfigError as e:
         return ConfigReport(error=str(e))
     plan = config.plan
-    return ConfigReport(plan.changes, plan.warnings, plan.notes, config.exists, team=config.team)
+    return ConfigReport(
+        plan.changes,
+        plan.warnings,
+        plan.notes,
+        config.exists,
+        team=config.team,
+        prompt_action=config.prompt_action,
+        broken=config.broken,
+    )

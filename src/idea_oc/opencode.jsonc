@@ -2,6 +2,8 @@
 // Copy this to ~/.config/opencode/opencode.jsonc as a starting point.
 // Models are reached through a Bedrock inference profile, one per team, so usage is tracked per team.
 // This file uses the ds profile. If you are in sds or econ, run `idea-oc sync config --team <name>` instead.
+// It needs prompts/idea-oc-anthropic.txt beside it (see the agent settings below), and `idea-oc sync config`
+// puts both in place, so prefer that to copying this file.
 // Setup guide: https://co-cddo.github.io/gds-idea-pkg-oc/guides/setup/
 // "./plugin-scripts/inject-env.js" is the REQUIRED plugin script; see the plugins guide:
 // https://co-cddo.github.io/gds-idea-pkg-oc/guides/plugins/
@@ -40,6 +42,14 @@
     }
   },
   "model": "amazon-bedrock/anthropic-claude-sonnet-5-5-ds",
+  //OpenCode picks its instructions from the model id, and an ARN does not say the model is Claude.
+  //These point the agents at a copy of the Claude instructions: save prompts/idea-oc-anthropic.txt next to this file.
+  //Without that file OpenCode will not start.
+  "agent": {
+    "build": { "prompt": "{file:./prompts/idea-oc-anthropic.txt}" },
+    "plan": { "prompt": "{file:./prompts/idea-oc-anthropic.txt}" },
+    "general": { "prompt": "{file:./prompts/idea-oc-anthropic.txt}" }
+  },
   "disabled_providers": ["anthropic"],
   "plugin": [
     ["./plugin-scripts/inject-env.js", { "AWS_PROFILE": "bedrockonly" }],

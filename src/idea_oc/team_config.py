@@ -33,6 +33,7 @@ from typing import Any
 from idea_oc.jsonc_doc import JsoncDocument, JsoncError, KeyPath
 from idea_oc.permissions import find_overridden
 from idea_oc.profiles import PROVIDER, Profiles, load_profiles
+from idea_oc.prompts import AGENTS, PROMPT_REF, is_agent_prompt, references_prompt
 
 SKIPPED_KEYS: frozenset[KeyPath] = frozenset({("$schema",), ("plugin",)})
 SKILLS_PATH: KeyPath = ("skills", "paths")
@@ -75,11 +76,14 @@ class Plan:
         changes: The edits, in the order they are applied.
         notes: Things idea-oc left alone and why.
         warnings: Team rules that a rule in the user's config would stop from working.
+        uses_prompt_file: Whether the config, once the changes are applied, refers to idea-oc's prompt file.
+            If it does, the file must exist, or OpenCode will not start.
     """
 
     changes: list[Change] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    uses_prompt_file: bool = False
 
     @property
     def pending(self) -> bool:
@@ -98,6 +102,9 @@ def desired_config(team: str, profiles: Profiles | None = None) -> dict:
     that team's inference profile: ``model`` points at it, and its model entry (the profile ARN plus the
     capabilities OpenCode cannot work out from an ARN) is the only entry listed. ``small_model`` is left
     to OpenCode: the small, background calls it covers (session titles and the like) are not tracked.
+
+    The agents that use OpenCode's model-chosen instructions are pointed at a copy of the Claude ones,
+    because OpenCode picks instructions from the model id and an ARN does not say the model is Claude.
     """
     profiles = profiles or load_profiles()
     data = team_config().data
@@ -106,6 +113,7 @@ def desired_config(team: str, profiles: Profiles | None = None) -> dict:
     data.setdefault("provider", {}).setdefault(PROVIDER, {})["models"] = {
         profiles.model_key(team): profiles.model_entry(team)
     }
+    data["agent"] = {agent: {"prompt": PROMPT_REF} for agent in AGENTS}
     return data
 
 
@@ -191,7 +199,9 @@ def plan_changes(user: JsoncDocument, store_dir: Path, store_value: str, desired
                 plan.notes.append(f"{_dotted(blocker)} is not an object in your config, so it was left alone.")
             continue
         current = user.get(path, _MISSING)
-        if isinstance(value, list):
+        if is_agent_prompt(path) and current is not _MISSING and current != value:
+            plan.notes.append(f"{_dotted(path)} is already set to a prompt of your own, so it was left alone.")
+        elif isinstance(value, list):
             _plan_list(plan, path, value, current)
         elif path[0] == PERMISSION and len(path) == 3:
             order = sections.setdefault(path[1], list(user.get((PERMISSION, path[1]), {})))
@@ -201,7 +211,10 @@ def plan_changes(user: JsoncDocument, store_dir: Path, store_value: str, desired
         elif current != value:
             plan.changes.append(Change(ChangeKind.CHANGE, path, value, old=current))
 
-    plan.warnings = _overridden_rules(user, plan, team_rules)
+    result = JsoncDocument.parse(user.text)
+    apply_changes(result, plan.changes)
+    plan.warnings = _overridden_rules(result, team_rules)
+    plan.uses_prompt_file = references_prompt(result.data)
     return plan
 
 
@@ -242,10 +255,8 @@ def apply_changes(document: JsoncDocument, changes: list[Change]) -> None:
             document.set(change.path, change.new, after=change.after, first=change.first)
 
 
-def _overridden_rules(user: JsoncDocument, plan: Plan, team_rules: dict[str, list[str]]) -> list[str]:
-    """Team rules that, once the plan is applied, a later rule in the user's own config overrides."""
-    result = JsoncDocument.parse(user.text)
-    apply_changes(result, plan.changes)
+def _overridden_rules(result: JsoncDocument, team_rules: dict[str, list[str]]) -> list[str]:
+    """Team rules that a later rule in the user's own config overrides, in the config as it will be."""
     warnings = []
     for section, patterns in team_rules.items():
         rules = result.get((PERMISSION, section))

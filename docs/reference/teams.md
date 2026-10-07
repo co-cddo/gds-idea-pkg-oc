@@ -68,6 +68,30 @@ the key, and without caching your usage and cost go up.
 
 Your own entries under `provider.amazon-bedrock.models` are never touched, and nor are other teams'.
 
+## The prompt file
+
+`sync config` writes `prompts/idea-oc-anthropic.txt` in the same folder as your config, and your agents
+refer to it as `{file:./prompts/idea-oc-anthropic.txt}`. It is a copy of OpenCode's own Claude
+instructions (OpenCode is MIT-licensed; the notice ships with `idea-oc`).
+
+!!! danger "OpenCode will not start without it"
+    If a config refers to a prompt file that does not exist, OpenCode stops with `bad file reference`.
+    So `idea-oc` is careful about it:
+
+    - the file is written **before** the config that refers to it;
+    - if you say no to the changes, the file the proposed `.new` config needs is still saved (and an
+      existing file is never replaced), so merging the proposal cannot break OpenCode;
+    - `idea-oc status` says **"OpenCode will not start"** if your config refers to the file and it has
+      gone, even with `--quiet`, and `idea-oc sync config` puts it back.
+
+- **Your own prompts are respected.** If you already set a `prompt` for `build`, `plan` or `general`,
+  it is left alone and `sync config` says so. If you set all three, the file is not installed at all.
+- **Other agents are unaffected.** `explore`, `compaction`, `title` and `summary` have instructions of
+  their own and do not use it.
+- **It can go out of date.** The copy is OpenCode's text as of the `idea-oc` release you have. If
+  OpenCode changes its instructions, `sync config` shows `update  prompts/idea-oc-anthropic.txt` after
+  you upgrade `idea-oc`. OpenCode last changed this text in October 2025.
+
 ## When a profile changes
 
 A profile cannot be edited in place. Changing the model behind it replaces it, which gives it a **new
@@ -83,15 +107,15 @@ The IDs are bundled with `idea-oc`, so you pick up new ones by upgrading it
 
 ## Things to know
 
-- **A different system prompt.** OpenCode chooses its built-in instructions for the model from the
-  model's id, looking for `claude`. A profile's ARN has no model name in it, so OpenCode falls back to
-  its general instructions instead of the Claude-specific ones. They are not the same: the Claude set
-  tells the model to plan with its todo tool and to use sub-agents, while the general set does not, and
-  the general set tells it never to add code comments unless asked and to run lint and type checks
-  when it finishes. OpenCode also tells the model it is "powered by" the ARN rather than by
-  Sonnet 5.5. We have not measured whether this changes results in practice, so say if the agent
-  behaves differently from before. It is a limit of how OpenCode picks its instructions, and cannot be
-  fixed in the config.
+- **The Claude instructions are installed for you.** OpenCode chooses its built-in instructions for a
+  model from the model's id, looking for `claude`. A profile's ARN has no model name in it, so without
+  help OpenCode would use its general instructions. They differ in behaviour, not just wording: the
+  Claude set tells the model to plan with its todo tool and use sub-agents, while the general set tells
+  it never to add code comments unless asked. So `sync config` also installs a copy of OpenCode's Claude
+  instructions as `prompts/idea-oc-anthropic.txt` beside your config and points the `build`, `plan` and
+  `general` agents at it. See [The prompt file](#the-prompt-file).
+- **One thing is still the ARN.** OpenCode tells the model it is "powered by" the profile's ARN rather
+  than by Sonnet 5.5. That cannot be changed from the config.
 - **Tracking is not enforcement.** `idea-oc` points your config at your team's profile. It cannot stop
   someone calling a model directly, which only the AWS role's permissions can do.
 - **Cost reports.** Each profile carries a `Team` tag. For it to appear as a column in Cost Explorer

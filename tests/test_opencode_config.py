@@ -155,7 +155,7 @@ def test_a_proposal_is_the_config_with_the_changes_applied_and_the_original_is_u
     original = '{\n  "model": "old" // keep\n}\n'
     write(config, original)
 
-    path = write_proposal(plan_config(config, store), config)
+    path, _ = write_proposal(plan_config(config, store), config)
 
     assert path == proposal_path(config) == config.with_name("opencode.jsonc.new")
     assert config.read_text() == original
@@ -165,7 +165,7 @@ def test_a_proposal_is_the_config_with_the_changes_applied_and_the_original_is_u
 
 
 def test_a_proposal_for_a_missing_config_is_a_complete_new_config(config, store):
-    path = write_proposal(plan_config(config, store), config)
+    path, _ = write_proposal(plan_config(config, store), config)
 
     assert not config.exists()
     assert JsoncDocument.parse(path.read_text()).get(("model",)) == team_data()["model"]

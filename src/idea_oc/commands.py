@@ -26,6 +26,7 @@ from idea_oc.opencode_config import (
 from idea_oc.planner import PlanError
 from idea_oc.plugins import SNIP_INSTALL, SNIP_PLUGIN, SNIP_PROGRAM, PluginReport, check_plugins
 from idea_oc.profiles import TeamChoice, load_profiles
+from idea_oc.prompts import PROMPT_DIR, PROMPT_FILENAME
 from idea_oc.registry import RegistryError, load_registry
 from idea_oc.status import SkillsReport, check_config, check_skills, personal_skill_dirs
 from idea_oc.store import Store, default_store_dir
@@ -35,6 +36,10 @@ from idea_oc.version import check_for_update
 
 STAGES = ("skills", "config")
 DOCS_URL = SYNC_WHY_URL
+_BROKEN_MESSAGE = (
+    f"Warning: your config refers to {PROMPT_DIR}/{PROMPT_FILENAME}, which is missing, so OpenCode will not start.\n"
+    "  Running `idea-oc sync config` puts it back."
+)
 _SYMBOLS = {Action.ADDED: "+", Action.UPDATED: "~"}
 
 
@@ -157,8 +162,17 @@ def _registration_needed(store_dir: Path) -> bool:
         return True
 
 
-def _echo_changes_list(changes: list[Change]) -> None:
-    rows = [describe(change) for change in changes]
+def _prompt_row(prompt_action: str | None) -> list[tuple[str, str, str]]:
+    """The change-list row for the prompt file, if it needs writing."""
+    if prompt_action is None:
+        return []
+    return [
+        (prompt_action, f"{PROMPT_DIR}/{PROMPT_FILENAME}", "OpenCode's Claude instructions, used by the agent prompts")
+    ]
+
+
+def _echo_changes_list(changes: list[Change], prompt_action: str | None = None) -> None:
+    rows = [describe(change) for change in changes] + _prompt_row(prompt_action)
     width = min(max((len(key) for _, key, _ in rows), default=0), 50)
     for verb, key, detail in rows:
         click.echo(f"  {verb:<6}  {key:<{width}}  {detail}")
@@ -219,11 +233,15 @@ def _confirm(prompt: str, *, yes: bool) -> bool:
 def _decline(config: ConfigPlan, config_path: Path) -> None:
     """The user said no: save what would have changed next to their file and say how to use it."""
     try:
-        proposal = write_proposal(config, config_path)
+        proposal, prompt = write_proposal(config, config_path)
     except ConfigError as e:
         click.echo(f"Not changed. {e}\nMake the changes listed above yourself.")
         return
     click.echo(f"Not changed. The proposed config is saved as {_tilde(proposal)}.")
+    if prompt:
+        click.echo(
+            f"Also saved {_tilde(prompt)}, which the proposed config refers to: OpenCode will not start without it."
+        )
     if config.exists:
         click.echo(f"Review it and copy across what you want:\n  diff {_tilde(config_path)} {_tilde(proposal)}")
     else:
@@ -265,7 +283,9 @@ def _apply_config(config_path: Path, *, dry_run: bool, yes: bool, team: str | No
         return False
 
     plan = config.plan
-    if not plan.pending:
+    if config.broken:
+        click.echo(_BROKEN_MESSAGE, err=True)
+    if not config.pending:
         click.echo(f"Config is up to date. {_team_line(config.team)}")
         _echo_config_extras(plan.warnings, plan.notes)
         if not dry_run:
@@ -278,7 +298,7 @@ def _apply_config(config_path: Path, *, dry_run: bool, yes: bool, team: str | No
         heading = "Changes to" if config.exists else "New file"
     click.echo(f"{heading} {_tilde(config_path)}:")
     click.echo(_team_line(config.team))
-    _echo_changes_list(plan.changes)
+    _echo_changes_list(plan.changes, config.prompt_action)
     _echo_config_extras(plan.warnings, plan.notes)
 
     if dry_run:
@@ -364,6 +384,8 @@ def _status_config(*, quiet: bool, team: str | None) -> bool:
     config_path = default_config_path()
     report = check_config(config_path, default_store_dir(), team)
 
+    if report.broken:  # a real problem, so shown even with --quiet
+        click.echo(_BROKEN_MESSAGE)
     if report.error:
         click.echo(f"Config:  could not be read: {report.error}")
     elif report.changes:
@@ -372,7 +394,12 @@ def _status_config(*, quiet: bool, team: str | None) -> bool:
         click.echo(f"Config:  {count} from the team's preferred config in {where} (run: idea-oc sync config)")
         if report.team:
             click.echo(_team_line(report.team))
-        _echo_changes_list(report.changes)
+        _echo_changes_list(report.changes, report.prompt_action)
+    elif report.prompt_action:
+        click.echo(f"Config:  matches, but {_tilde(config_path.parent / PROMPT_DIR / PROMPT_FILENAME)} needs writing")
+        if report.team:
+            click.echo(_team_line(report.team))
+        _echo_changes_list([], report.prompt_action)
     elif not quiet:
         click.echo(f"Config:  ok (matches the team's preferred config in {_tilde(config_path)})")
         if report.team:

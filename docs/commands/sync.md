@@ -65,6 +65,8 @@ Apply these changes? The original is saved as ~/.config/opencode/opencode.jsonc.
 - the skill folder, which must be listed under `skills.paths` so OpenCode loads your skills,
 - the Bedrock provider settings, `disabled_providers`, and the `model`, which points at your team's
   inference profile (see [Teams and usage tracking](../reference/teams.md)),
+- the Claude instructions file `prompts/idea-oc-anthropic.txt` beside your config, and the agent
+  `prompt` settings that point at it (see [The prompt file](../reference/teams.md#the-prompt-file)),
 - the `permission` rules.
 
 **What it never touches.** Plugins are not changed. Nothing else in your config is touched either,

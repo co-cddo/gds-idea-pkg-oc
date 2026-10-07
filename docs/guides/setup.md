@@ -70,10 +70,17 @@ If you would rather do it by hand, download the
 instead, which includes the plugin entries:
 
 ```bash
-mkdir -p ~/.config/opencode
+mkdir -p ~/.config/opencode/prompts
 curl -fsSL https://raw.githubusercontent.com/co-cddo/gds-idea-pkg-oc/main/src/idea_oc/opencode.jsonc \
   -o ~/.config/opencode/opencode.jsonc
+curl -fsSL https://raw.githubusercontent.com/co-cddo/gds-idea-pkg-oc/main/src/idea_oc/prompts/anthropic.txt \
+  -o ~/.config/opencode/prompts/idea-oc-anthropic.txt
 ```
+
+!!! danger "You need both files"
+    The config tells OpenCode to read `prompts/idea-oc-anthropic.txt`, and **OpenCode will not start at
+    all if that file is missing**. `idea-oc sync config` always writes the file first. By hand, download
+    the prompt as well, as above.
 
 !!! warning
     This replaces `~/.config/opencode/opencode.jsonc` if it exists. If you already have a config,
