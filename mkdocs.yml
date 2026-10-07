@@ -26,6 +26,7 @@ nav:
       - list: commands/list.md
   - Reference:
       - Preferred config: reference/preferred-config.md
+      - Teams and usage tracking: reference/teams.md
       - Environment variables: reference/environment.md
 
 markdown_extensions:

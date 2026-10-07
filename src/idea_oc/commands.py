@@ -7,7 +7,7 @@ from pathlib import Path
 
 import click
 
-from idea_oc.docs import PLUGINS_RECOMMENDED_URL, PLUGINS_REQUIRED_URL, PLUGINS_SNIP_URL, SYNC_WHY_URL
+from idea_oc.docs import PLUGINS_RECOMMENDED_URL, PLUGINS_REQUIRED_URL, PLUGINS_SNIP_URL, SYNC_WHY_URL, TEAMS_URL
 from idea_oc.github import GitHubClient, get_token
 from idea_oc.models import Registry
 from idea_oc.opencode_config import (
@@ -25,6 +25,7 @@ from idea_oc.opencode_config import (
 )
 from idea_oc.planner import PlanError
 from idea_oc.plugins import SNIP_INSTALL, SNIP_PLUGIN, SNIP_PROGRAM, PluginReport, check_plugins
+from idea_oc.profiles import TeamChoice, load_profiles
 from idea_oc.registry import RegistryError, load_registry
 from idea_oc.status import SkillsReport, check_config, check_skills, personal_skill_dirs
 from idea_oc.store import Store, default_store_dir
@@ -163,6 +164,15 @@ def _echo_changes_list(changes: list[Change]) -> None:
         click.echo(f"  {verb:<6}  {key:<{width}}  {detail}")
 
 
+def _team_line(choice: TeamChoice) -> str:
+    """Say which team's usage this config will be tracked against, and how to choose another."""
+    line = f"Team: {choice.team} ({choice.explanation})."
+    if choice.source == "default":
+        others = " or ".join(t for t in sorted(load_profiles().teams) if t != choice.team)
+        line += f" Usage is tracked per team. If you are in {others}, run again with --team <name>. More: {TEAMS_URL}"
+    return line
+
+
 def _echo_config_extras(warnings: list[str], notes: list[str]) -> None:
     for line in warnings:
         click.echo(f"Heads up: {line}")
@@ -232,31 +242,31 @@ def _accept(config: ConfigPlan, config_path: Path) -> bool:
     return True
 
 
-def _sync_config(*, dry_run: bool, yes: bool) -> bool:
+def _sync_config(*, dry_run: bool, yes: bool, team: str | None) -> bool:
     """Bring the user's OpenCode config in line with the team's preferred one, then advise on plugins.
 
     Works offline and never touches the store.
     """
     config_path = default_config_path()
-    readable = _apply_config(config_path, dry_run=dry_run, yes=yes)
+    readable = _apply_config(config_path, dry_run=dry_run, yes=yes, team=team)
     if readable:
         click.echo()
         _echo_plugin_advice(check_plugins(config_path))
     return True
 
 
-def _apply_config(config_path: Path, *, dry_run: bool, yes: bool) -> bool:
+def _apply_config(config_path: Path, *, dry_run: bool, yes: bool, team: str | None) -> bool:
     """Show, and with approval make, the config changes. Returns False if the config could not be read."""
     store_dir = default_store_dir()
     try:
-        config = plan_config(config_path, store_dir)
+        config = plan_config(config_path, store_dir, team)
     except ConfigError as e:
         click.echo(f"{e}\nAdd this yourself to register the skills folder:\n{manual_snippet(store_dir)}", err=True)
         return False
 
     plan = config.plan
     if not plan.pending:
-        click.echo("Config is up to date.")
+        click.echo(f"Config is up to date. {_team_line(config.team)}")
         _echo_config_extras(plan.warnings, plan.notes)
         if not dry_run:
             clear_proposal(config_path)
@@ -267,6 +277,7 @@ def _apply_config(config_path: Path, *, dry_run: bool, yes: bool) -> bool:
     else:
         heading = "Changes to" if config.exists else "New file"
     click.echo(f"{heading} {_tilde(config_path)}:")
+    click.echo(_team_line(config.team))
     _echo_changes_list(plan.changes)
     _echo_config_extras(plan.warnings, plan.notes)
 
@@ -281,7 +292,9 @@ def _apply_config(config_path: Path, *, dry_run: bool, yes: bool) -> bool:
     return True
 
 
-def run_sync(*, registry_path: Path | None, stage: str | None, dry_run: bool, prune: bool, yes: bool) -> None:
+def run_sync(
+    *, registry_path: Path | None, stage: str | None, dry_run: bool, prune: bool, yes: bool, team: str | None = None
+) -> None:
     """Run the skills stage, the config stage, or both. Exits 1 if any stage failed."""
     check_for_update()
     stages = _selected(stage)
@@ -298,7 +311,7 @@ def run_sync(*, registry_path: Path | None, stage: str | None, dry_run: bool, pr
         )
     if "config" in stages:
         _heading("config", stages)
-        outcomes.append(_guarded(lambda: _sync_config(dry_run=dry_run, yes=yes)))
+        outcomes.append(_guarded(lambda: _sync_config(dry_run=dry_run, yes=yes, team=team)))
 
     if not all(outcomes):
         raise click.exceptions.Exit(1)
@@ -343,13 +356,13 @@ def _status_skills(*, registry_path: Path | None, quiet: bool) -> bool:
     return not report.problems
 
 
-def _status_config(*, quiet: bool) -> bool:
+def _status_config(*, quiet: bool, team: str | None) -> bool:
     """Report how the config differs from the team's preferred one. Returns True if it matches. Offline.
 
     Plugin advice is printed too, but it is advice only and never makes the check fail.
     """
     config_path = default_config_path()
-    report = check_config(config_path, default_store_dir())
+    report = check_config(config_path, default_store_dir(), team)
 
     if report.error:
         click.echo(f"Config:  could not be read: {report.error}")
@@ -357,9 +370,13 @@ def _status_config(*, quiet: bool) -> bool:
         count = _plural(len(report.changes), "difference")
         where = _tilde(config_path)
         click.echo(f"Config:  {count} from the team's preferred config in {where} (run: idea-oc sync config)")
+        if report.team:
+            click.echo(_team_line(report.team))
         _echo_changes_list(report.changes)
     elif not quiet:
         click.echo(f"Config:  ok (matches the team's preferred config in {_tilde(config_path)})")
+        if report.team:
+            click.echo(_team_line(report.team))
 
     if not quiet:
         _echo_config_extras(report.warnings, report.notes)
@@ -367,7 +384,7 @@ def _status_config(*, quiet: bool) -> bool:
     return not report.problems
 
 
-def run_status(*, registry_path: Path | None, stage: str | None, quiet: bool) -> None:
+def run_status(*, registry_path: Path | None, stage: str | None, quiet: bool, team: str | None = None) -> None:
     """Report drift for the skills stage, the config stage, or both. Exits 1 if a sync is needed."""
     check_for_update(quiet=quiet)
     stages = _selected(stage)
@@ -376,7 +393,7 @@ def run_status(*, registry_path: Path | None, stage: str | None, quiet: bool) ->
     if "skills" in stages:
         outcomes.append(_guarded(lambda: _status_skills(registry_path=registry_path, quiet=quiet)))
     if "config" in stages:
-        outcomes.append(_guarded(lambda: _status_config(quiet=quiet)))
+        outcomes.append(_guarded(lambda: _status_config(quiet=quiet, team=team)))
 
     if not all(outcomes):
         raise click.exceptions.Exit(1)

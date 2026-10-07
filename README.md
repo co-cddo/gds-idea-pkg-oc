@@ -25,6 +25,7 @@ The docs live in [`docs/`](docs/) and are published with mkdocs.
 | [Plugins](docs/guides/plugins.md) | The required plugin and the recommended ones |
 | [sync](docs/commands/sync.md), [status](docs/commands/status.md), [list](docs/commands/list.md) | The commands |
 | [Preferred config](docs/reference/preferred-config.md) | The team's OpenCode config and how permission rules work |
+| [Teams and usage tracking](docs/reference/teams.md) | Bedrock inference profiles: choosing ds, sds or econ |
 
 The preferred config itself is [`src/idea_oc/opencode.jsonc`](src/idea_oc/opencode.jsonc).
 

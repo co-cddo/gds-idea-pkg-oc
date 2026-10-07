@@ -32,6 +32,7 @@ from typing import Any
 
 from idea_oc.jsonc_doc import JsoncDocument, JsoncError, KeyPath
 from idea_oc.permissions import find_overridden
+from idea_oc.profiles import PROVIDER, Profiles, load_profiles
 
 SKIPPED_KEYS: frozenset[KeyPath] = frozenset({("$schema",), ("plugin",)})
 SKILLS_PATH: KeyPath = ("skills", "paths")
@@ -86,18 +87,42 @@ class Plan:
 
 
 def team_config() -> JsoncDocument:
-    """The preferred config bundled with idea-oc."""
+    """The preferred config bundled with idea-oc. It is the variant for the default team."""
     return JsoncDocument.parse(files("idea_oc").joinpath("opencode.jsonc").read_text())
 
 
+def desired_config(team: str, profiles: Profiles | None = None) -> dict:
+    """The preferred config as it should be for ``team``.
+
+    The bundled file is written for the default team. For any team, the model settings are replaced by
+    that team's inference profile: ``model`` points at it, and its model entry (the profile ARN plus the
+    capabilities OpenCode cannot work out from an ARN) is the only entry listed. ``small_model`` is left
+    to OpenCode: the small, background calls it covers (session titles and the like) are not tracked.
+    """
+    profiles = profiles or load_profiles()
+    data = team_config().data
+    reference = profiles.model_ref(profiles.check_team(team))
+    data["model"] = reference
+    data.setdefault("provider", {}).setdefault(PROVIDER, {})["models"] = {
+        profiles.model_key(team): profiles.model_entry(team)
+    }
+    return data
+
+
+def _is_model_entry(path: KeyPath) -> bool:
+    """A model's settings are one unit: they are added or replaced whole, never one field at a time."""
+    return len(path) == 4 and path[:3] == ("provider", PROVIDER, "models")
+
+
 def _flatten(node: dict, path: KeyPath = ()) -> list[tuple[KeyPath, Any]]:
-    """The leaves of ``node`` as (path, value), in order. Lists count as leaves."""
+    """The leaves of ``node`` as (path, value), in order. Lists and model entries count as leaves."""
     leaves = []
     for key, value in node.items():
         here = (*path, key)
         if here in SKIPPED_KEYS:
             continue
-        leaves += _flatten(value, here) if isinstance(value, dict) else [(here, value)]
+        whole = not isinstance(value, dict) or _is_model_entry(here)
+        leaves += [(here, value)] if whole else _flatten(value, here)
     return leaves
 
 
@@ -131,19 +156,19 @@ def _is_registered(paths: list, store_value: str, store_dir: Path) -> bool:
     return any(p == store_value or Path(p).expanduser() == store_dir for p in paths)
 
 
-def plan_changes(user: JsoncDocument, store_dir: Path, store_value: str, team: JsoncDocument | None = None) -> Plan:
+def plan_changes(user: JsoncDocument, store_dir: Path, store_value: str, desired: dict | None = None) -> Plan:
     """Compare the user's config with the preferred config and the skill store.
 
     Args:
         user: The user's config (an empty document if they have none).
         store_dir: The skill store, which must be listed in ``skills.paths``.
         store_value: How the store should be written in the config (``~/...`` when possible).
-        team: The preferred config. Defaults to the one bundled with idea-oc.
+        desired: The preferred config for one team (see ``desired_config``). Defaults to the default team's.
 
     Raises:
         JsoncError: If ``skills.paths`` is not a list of strings.
     """
-    team = team or team_config()
+    desired = desired if desired is not None else desired_config(load_profiles().default_team)
     plan = Plan()
 
     paths = user.get(SKILLS_PATH, [])
@@ -154,12 +179,12 @@ def plan_changes(user: JsoncDocument, store_dir: Path, store_value: str, team: J
 
     sections: dict[str, list[str]] = {}  # permission section -> the user's rules in order, as edits are planned
     team_rules: dict[str, list[str]] = {}
-    for path, _ in _flatten(team.data):
+    for path, _ in _flatten(desired):
         if path[0] == PERMISSION and len(path) == 3:
             team_rules.setdefault(path[1], []).append(path[2])
 
     skipped: set[KeyPath] = set()
-    for path, value in _flatten(team.data):
+    for path, value in _flatten(desired):
         if blocker := _blocked_by(user, path):
             if blocker not in skipped:
                 skipped.add(blocker)
@@ -242,15 +267,30 @@ def _dotted(path: KeyPath) -> str:
     return ".".join(path)
 
 
+def _profile_id(entry: Any) -> str | None:
+    """The short id of the inference profile a model entry points at, if it points at one."""
+    arn = entry.get("id") if isinstance(entry, dict) else None
+    return arn.rsplit("/", 1)[-1] if isinstance(arn, str) and "application-inference-profile/" in arn else None
+
+
+def _show(value: Any) -> str:
+    if (profile := _profile_id(value)) is not None:
+        return f"inference profile {profile}"
+    return value if isinstance(value, str) else json.dumps(value)
+
+
 def describe(change: Change) -> tuple[str, str, str]:
     """(verb, key, detail) for showing a change to the user."""
-
-    def show(value: Any) -> str:
-        return value if isinstance(value, str) else json.dumps(value)
-
-    detail = {
-        ChangeKind.ADD: show(change.new),
-        ChangeKind.CHANGE: f"{show(change.old)} -> {show(change.new)}",
-        ChangeKind.APPEND: ", ".join(show(item) for item in change.new),
-    }[change.kind]
-    return change.kind.value, _dotted(change.path), detail
+    if (
+        change.kind is ChangeKind.CHANGE
+        and _is_model_entry(change.path)
+        and _profile_id(change.old) == _profile_id(change.new)
+    ):
+        shown = "settings updated"
+    elif change.kind is ChangeKind.CHANGE:
+        shown = f"{_show(change.old)} -> {_show(change.new)}"
+    elif change.kind is ChangeKind.APPEND:
+        shown = ", ".join(_show(item) for item in change.new)
+    else:
+        shown = _show(change.new)
+    return change.kind.value, _dotted(change.path), shown

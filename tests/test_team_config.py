@@ -37,7 +37,9 @@ def test_the_file_is_valid_and_survives_an_untouched_round_trip(config):
 
 def test_it_sets_up_bedrock_in_the_team_region(config):
     assert config.get(("provider", "amazon-bedrock", "options")) == {"region": "eu-west-2", "profile": "bedrockonly"}
-    assert config.get(("model",)) == "amazon-bedrock/eu.anthropic.claude-sonnet-5-5"
+    assert (
+        config.get(("model",)) == "amazon-bedrock/anthropic-claude-sonnet-5-5-ds"
+    )  # reached through the default team's inference profile
     assert config.get(("disabled_providers",)) == ["anthropic"]
 
 

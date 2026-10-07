@@ -26,6 +26,7 @@ The command exits with status 1 if any stage failed.
 | `--dry-run` | both | Show what would change and write nothing. Never prompts. |
 | `--prune` / `--no-prune` | skills | Remove skills that are no longer approved (the default), or keep them. |
 | `-y`, `--yes` | config | Apply the changes to your OpenCode config without asking. |
+| `--team NAME` | config | Whose inference profile to use: `ds`, `sds` or `econ`. By default the team your config already uses, else `ds`. |
 | `--registry FILE` | both | Use a custom registry file instead of the built-in one. Goes before the command. |
 
 ## The skills stage
@@ -52,7 +53,8 @@ apply it.
 ```text
 Changes to ~/.config/opencode/opencode.jsonc:
   append  skills.paths                              ~/.local/share/idea-oc/skills
-  change  model                                     amazon-bedrock/eu.anthropic.claude-sonnet-5 -> amazon-bedrock/eu.anthropic.claude-sonnet-5-5
+  add     provider.amazon-bedrock.models.anthropic-claude-sonnet-5-5-ds  inference profile 4niqtfvd2b0y
+  change  model                                     amazon-bedrock/eu.anthropic.claude-sonnet-5-5 -> amazon-bedrock/anthropic-claude-sonnet-5-5-ds
   add     permission.bash["rm -rf*"]                deny
 
 Apply these changes? The original is saved as ~/.config/opencode/opencode.jsonc.idea-oc.bak. [y/N]:
@@ -61,7 +63,8 @@ Apply these changes? The original is saved as ~/.config/opencode/opencode.jsonc.
 **What it looks at**
 
 - the skill folder, which must be listed under `skills.paths` so OpenCode loads your skills,
-- the Bedrock provider settings, the `model` and `disabled_providers`,
+- the Bedrock provider settings, `disabled_providers`, and the `model`, which points at your team's
+  inference profile (see [Teams and usage tracking](../reference/teams.md)),
 - the `permission` rules.
 
 **What it never touches.** Plugins are not changed. Nothing else in your config is touched either,

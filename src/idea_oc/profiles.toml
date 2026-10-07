@@ -1,0 +1,38 @@
+# Bedrock application inference profiles, one per team, so each team's usage is tracked separately.
+#
+# The profiles are created by the gds-idea-ai-reviewer CDK stack. Changing the model behind a profile
+# replaces it and gives it a new ID, so update the IDs here whenever that stack redeploys them.
+# A profile is addressed by ARN: arn:aws:bedrock:<region>:<account>:application-inference-profile/<id>
+
+default_team = "ds"
+account = "992382722318"
+region = "eu-west-2"
+
+[teams]
+ds = "4niqtfvd2b0y"
+sds = "ca6k31qi6v37"
+econ = "sbs7oxfolxbz"
+
+# OpenCode learns what a model can do from its id. An ARN has no model name in it, so OpenCode would
+# treat a profile as a model with no context window, no reasoning and no image input. These values
+# restate what the catalogue says about the model the profiles route to (Sonnet 5.5).
+[model]
+key = "anthropic-claude-sonnet-5-5"   # must contain "claude" and "anthropic": OpenCode only turns on prompt caching for those
+name = "Claude Sonnet 5.5"
+family = "claude-sonnet"
+release_date = "2026-09-28"
+context = 1000000
+output = 128000
+input_modalities = ["text", "image", "pdf"]
+output_modalities = ["text"]
+reasoning = true
+tool_call = true
+attachment = true
+temperature = false
+efforts = ["low", "medium", "high", "xhigh", "max"]
+
+[model.cost]
+input = 2.2
+output = 11.0
+cache_read = 0.22
+cache_write = 2.75

@@ -1,5 +1,7 @@
 // GDS IDEA team preferred OpenCode config.
 // Copy this to ~/.config/opencode/opencode.jsonc as a starting point.
+// Models are reached through a Bedrock inference profile, one per team, so usage is tracked per team.
+// This file uses the ds profile. If you are in sds or econ, run `idea-oc sync config --team <name>` instead.
 // Setup guide: https://co-cddo.github.io/gds-idea-pkg-oc/guides/setup/
 // "./plugin-scripts/inject-env.js" is the REQUIRED plugin script; see the plugins guide:
 // https://co-cddo.github.io/gds-idea-pkg-oc/guides/plugins/
@@ -10,10 +12,34 @@
       "options": {
         "region": "eu-west-2",
         "profile": "bedrockonly"
+      },
+      //OpenCode cannot tell what a model can do from a profile's ARN, so its settings are restated here.
+      //The key must contain "claude" and "anthropic", or OpenCode stops caching prompts.
+      "models": {
+        "anthropic-claude-sonnet-5-5-ds": {
+          "id": "arn:aws:bedrock:eu-west-2:992382722318:application-inference-profile/4niqtfvd2b0y",
+          "name": "Claude Sonnet 5.5 (ds)",
+          "family": "claude-sonnet",
+          "release_date": "2026-09-28",
+          "reasoning": true,
+          "tool_call": true,
+          "attachment": true,
+          "temperature": false,
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "limit": { "context": 1000000, "output": 128000 },
+          "cost": { "input": 2.2, "output": 11.0, "cache_read": 0.22, "cache_write": 2.75 },
+          "variants": {
+            "low": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "low" } },
+            "medium": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "medium" } },
+            "high": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "high" } },
+            "xhigh": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "xhigh" } },
+            "max": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "max" } }
+          }
+        }
       }
     }
   },
-  "model": "amazon-bedrock/eu.anthropic.claude-sonnet-5-5",
+  "model": "amazon-bedrock/anthropic-claude-sonnet-5-5-ds",
   "disabled_providers": ["anthropic"],
   "plugin": [
     ["./plugin-scripts/inject-env.js", { "AWS_PROFILE": "bedrockonly" }],

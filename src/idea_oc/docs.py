@@ -6,6 +6,7 @@ SYNC_WHY_URL = f"{DOCS_SITE}commands/sync/#why-sync-skills-does-not-edit-your-co
 PLUGINS_REQUIRED_URL = f"{DOCS_SITE}guides/plugins/#the-required-plugin"
 PLUGINS_RECOMMENDED_URL = f"{DOCS_SITE}guides/plugins/#recommended-plugins"
 PLUGINS_SNIP_URL = f"{DOCS_SITE}guides/plugins/#opencode-snip-needs-a-separate-program"
+TEAMS_URL = f"{DOCS_SITE}reference/teams/#choosing-your-team"
 
 # Every link built here is checked against the docs by tests/test_docs.py.
-ALL_LINKS = (SYNC_WHY_URL, PLUGINS_REQUIRED_URL, PLUGINS_RECOMMENDED_URL, PLUGINS_SNIP_URL)
+ALL_LINKS = (SYNC_WHY_URL, PLUGINS_REQUIRED_URL, PLUGINS_RECOMMENDED_URL, PLUGINS_SNIP_URL, TEAMS_URL)

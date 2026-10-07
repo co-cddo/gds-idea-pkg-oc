@@ -45,7 +45,12 @@ def test_first_sync_installs_skills_and_creates_the_config(cli_runner, reviewer,
     assert (store_dir / "cdk-review" / "SKILL.md").exists()
     config = json.loads(config_file.read_text())
     assert config["skills"]["paths"] == ["~/.local/share/idea-oc/skills"]
-    assert config["model"] == "amazon-bedrock/eu.anthropic.claude-sonnet-5-5"
+    assert config["model"] == "amazon-bedrock/anthropic-claude-sonnet-5-5-ds"
+    assert "small_model" not in config  # background calls are not tracked, so OpenCode keeps its own choice
+    assert (
+        "application-inference-profile/4niqtfvd2b0y"
+        in config["provider"]["amazon-bedrock"]["models"]["anthropic-claude-sonnet-5-5-ds"]["id"]
+    )
     assert config["permission"]["bash"]["gh pr merge *"] == "deny"
     assert "plugin" not in config  # plugins are advised on, never added
 
@@ -77,7 +82,10 @@ def test_declining_leaves_the_config_alone_and_saves_a_proposal_to_merge_by_hand
     assert config_file.read_text() == '{\n  "model": "old" // mine\n}\n'
     proposal = config_file.with_name("opencode.json.new")
     assert "// mine" in proposal.read_text()
-    assert json.loads(proposal.read_text().replace("// mine", ""))["model"].endswith("sonnet-5-5")
+    assert (
+        json.loads(proposal.read_text().replace("// mine", ""))["model"]
+        == "amazon-bedrock/anthropic-claude-sonnet-5-5-ds"
+    )
     assert not config_file.with_name("opencode.json.idea-oc.bak").exists()
 
 
@@ -98,7 +106,7 @@ def test_prompt_can_be_accepted_and_the_original_is_backed_up(cli_runner, review
     assert "Updated ~/.config/opencode/opencode.json." in result.output
     assert "The original is saved as ~/.config/opencode/opencode.json.idea-oc.bak." in result.output
     assert config_file.with_name("opencode.json.idea-oc.bak").read_text() == '{"model": "old"}\n'
-    assert json.loads(config_file.read_text())["model"].endswith("sonnet-5-5")
+    assert json.loads(config_file.read_text())["model"] == "amazon-bedrock/anthropic-claude-sonnet-5-5-ds"
 
 
 def test_the_prompt_defaults_to_no(cli_runner, reviewer, config_file):
@@ -145,7 +153,7 @@ def test_commented_config_is_updated_and_its_comments_kept(cli_runner, reviewer,
     assert result.exit_code == 0, result.output
     text = config_file.read_text()
     assert "// hi" in text and "// keep" in text
-    assert '"model": "amazon-bedrock/eu.anthropic.claude-sonnet-5-5", // keep' in text
+    assert '"model": "amazon-bedrock/anthropic-claude-sonnet-5-5-ds", // keep' in text
     assert "skills" in text
 
 

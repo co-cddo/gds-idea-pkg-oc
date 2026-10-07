@@ -11,7 +11,8 @@ To set it up from scratch, follow [Set up OpenCode](../guides/setup.md).
 | Section | Purpose |
 |---|---|
 | `provider.amazon-bedrock.options` | The `eu-west-2` region and the `bedrockonly` AWS profile that `awsprofile bedrock` creates. |
-| `model` | Sonnet 5.5 through the **EU** inference profile (`eu.anthropic.claude-sonnet-5-5`), so inference stays in EU regions. The `global.` profile may route requests to other regions. |
+| `model` | Sonnet 5.5 through your **team's Bedrock inference profile**, so each team's usage is tracked separately. The profile routes only to EU regions. The file is written for the `ds` team; see [Teams and usage tracking](teams.md) for the others. |
+| `provider.amazon-bedrock.models` | The profile entry itself: its ARN, plus the settings OpenCode cannot work out from an ARN. |
 | `disabled_providers` | Turns off the direct Anthropic API, so Bedrock is the only route to Claude. |
 | `plugin` | The [required plugin](../guides/plugins.md#the-required-plugin) and the [recommended ones](../guides/plugins.md#recommended-plugins). |
 | `permission` | What OpenCode may do without asking: see below. |

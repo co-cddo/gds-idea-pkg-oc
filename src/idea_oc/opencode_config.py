@@ -15,7 +15,8 @@ from enum import Enum
 from pathlib import Path
 
 from idea_oc.jsonc_doc import JsoncDocument, JsoncError
-from idea_oc.team_config import SKILLS_PATH, Plan, apply_changes, plan_changes
+from idea_oc.profiles import ProfilesError, TeamChoice, choose_team, load_profiles
+from idea_oc.team_config import SKILLS_PATH, Plan, apply_changes, desired_config, plan_changes
 
 # The order OpenCode itself looks for the global config in: the first one that exists is its "main" file.
 CONFIG_FILENAMES = ("opencode.jsonc", "opencode.json", "config.json")
@@ -43,11 +44,13 @@ class ConfigPlan:
         document: The user's config as read (an empty document if the file does not exist).
         plan: The changes needed.
         exists: Whether the config file exists.
+        team: Which team's inference profile the config is being compared against, and why.
     """
 
     document: JsoncDocument
     plan: Plan
     exists: bool
+    team: TeamChoice
 
 
 def default_config_path() -> Path:
@@ -111,18 +114,27 @@ def skills_path_state(config_path: Path, store_dir: Path) -> ConfigState:
     return ConfigState.REGISTERED if registered else ConfigState.NOT_REGISTERED
 
 
-def plan_config(config_path: Path, store_dir: Path) -> ConfigPlan:
+def plan_config(config_path: Path, store_dir: Path, team: str | None = None) -> ConfigPlan:
     """Work out what the team's preferred config would change in the user's config.
 
+    Args:
+        config_path: The OpenCode config file (it need not exist).
+        store_dir: The skill store.
+        team: The team to use, from ``--team``. By default the team the config's model already uses,
+            else the default team.
+
     Raises:
-        ConfigError: If the config cannot be read, parsed or compared.
+        ConfigError: If the config cannot be read, parsed or compared, or the team is unknown.
     """
     document = _open(config_path)
     try:
-        plan = plan_changes(document, store_dir, store_config_value(store_dir))
-    except JsoncError as e:
+        profiles = load_profiles()
+        choice = choose_team(profiles, team, document.data)
+        desired = desired_config(choice.team, profiles)
+        plan = plan_changes(document, store_dir, store_config_value(store_dir), desired)
+    except (JsoncError, ProfilesError) as e:
         raise ConfigError(f"{config_path}: {e}") from e
-    return ConfigPlan(document, plan, config_path.exists())
+    return ConfigPlan(document, plan, config_path.exists(), choice)
 
 
 def _render(config: ConfigPlan, config_path: Path) -> str:

@@ -46,7 +46,8 @@ By default OpenCode starts with a built-in model. The team's
 [preferred config](../reference/preferred-config.md) connects it to Bedrock instead:
 
 - the `eu-west-2` region and the `bedrockonly` profile,
-- the Sonnet 5.5 model through the EU inference profile, so inference stays in EU regions,
+- Sonnet 5.5 in the EU regions, reached through your team's Bedrock inference profile so that usage is
+  tracked per team (see [Teams and usage tracking](../reference/teams.md)),
 - the direct Anthropic API disabled, so Bedrock is the only route to Claude,
 - the permission rules described in the next step.
 
@@ -54,8 +55,12 @@ The easiest way to get it is to let `idea-oc` do it. Install it (see [Install](.
 then run:
 
 ```bash
-idea-oc sync config
+idea-oc sync config                # if you are in ds
+idea-oc sync config --team sds     # if you are in sds (or --team econ for econ)
 ```
+
+Say which team you are in the first time: without `--team` it assumes `ds`. After that a plain
+`idea-oc sync` keeps your team.
 
 It shows what it would add to your config, or create if you have none, and asks before writing.
 It does not add plugins: step 5 covers the one you need.

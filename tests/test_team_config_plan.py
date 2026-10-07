@@ -11,6 +11,7 @@ from idea_oc.team_config import (
     ChangeKind,
     apply_changes,
     describe,
+    desired_config,
     plan_changes,
     team_config,
 )
@@ -84,7 +85,7 @@ def test_a_different_model_is_proposed_as_a_change_showing_both_values():
     assert (change.kind, change.old, change.new) == (
         ChangeKind.CHANGE,
         "amazon-bedrock/eu.anthropic.claude-sonnet-5",
-        "amazon-bedrock/eu.anthropic.claude-sonnet-5-5",
+        "amazon-bedrock/anthropic-claude-sonnet-5-5-ds",
     )
 
 
@@ -362,10 +363,142 @@ def test_applying_a_plan_to_a_commented_walkthrough_style_config_is_stable():
 def test_describe_shows_what_will_happen():
     changes = by_path(plan('{"model": "old", "disabled_providers": ["x"]}\n').changes)
 
-    assert describe(changes[("model",)]) == ("change", "model", "old -> amazon-bedrock/eu.anthropic.claude-sonnet-5-5")
+    assert describe(changes[("model",)]) == ("change", "model", "old -> amazon-bedrock/anthropic-claude-sonnet-5-5-ds")
     assert describe(changes[("disabled_providers",)]) == ("append", "disabled_providers", "anthropic")
     assert describe(changes[("permission", "bash", "gh pr merge *")]) == (
         "add",
         'permission.bash["gh pr merge *"]',
         "deny",
     )
+
+
+# --- inference profiles -----------------------------------------------------------------------
+
+DS_KEY = "anthropic-claude-sonnet-5-5-ds"
+SDS_KEY = "anthropic-claude-sonnet-5-5-sds"
+MODELS = ("provider", "amazon-bedrock", "models")
+
+
+def plan_for(team: str, text: str = "{}\n"):
+    return plan_changes(JsoncDocument.parse(text), STORE, STORE_VALUE, desired_config(team))
+
+
+def applied_for(team: str, text: str = "{}\n") -> JsoncDocument:
+    document = JsoncDocument.parse(text)
+    apply_changes(document, plan_for(team, text).changes)
+    return document
+
+
+def test_a_profile_is_one_change_not_a_page_of_fields():
+    changes = by_path(plan_for("ds").changes)
+
+    entry_changes = [path for path in changes if path[:3] == MODELS]
+    assert entry_changes == [(*MODELS, DS_KEY)]
+    assert changes[(*MODELS, DS_KEY)].kind is ChangeKind.ADD
+
+
+def test_a_new_user_is_pointed_at_the_profile():
+    document = applied_for("sds")
+
+    assert document.get(("model",)) == f"amazon-bedrock/{SDS_KEY}"
+    assert document.get((*MODELS, SDS_KEY, "id")).endswith("application-inference-profile/ca6k31qi6v37")
+
+
+@pytest.mark.parametrize("small_model", [None, "amazon-bedrock/eu.anthropic.claude-haiku-4-5", "anything/else"])
+def test_the_small_model_is_never_touched_whatever_the_user_has(small_model):
+    """Titles and other background calls are not tracked, so small_model is the user's own business."""
+    text = "{}\n" if small_model is None else f'{{"small_model": "{small_model}"}}\n'
+
+    result = plan_for("ds", text)
+    document = applied_for("ds", text)
+
+    assert ("small_model",) not in by_path(result.changes)
+    assert document.get(("small_model",)) == small_model
+
+
+@pytest.mark.parametrize("team", ["ds", "sds", "econ"])
+def test_syncing_a_team_twice_changes_nothing_the_second_time(team):
+    document = applied_for(team)
+
+    assert plan_changes(document, STORE, STORE_VALUE, desired_config(team)).pending is False
+
+
+def test_moving_to_another_team_changes_the_model_and_adds_the_new_profile_but_keeps_the_old_entry():
+    first = applied_for("ds")
+
+    result = plan_changes(first, STORE, STORE_VALUE, desired_config("sds"))
+    changes = by_path(result.changes)
+
+    assert changes[("model",)].new == f"amazon-bedrock/{SDS_KEY}"
+    assert ("small_model",) not in changes
+    assert changes[(*MODELS, SDS_KEY)].kind is ChangeKind.ADD
+    apply_changes(first, result.changes)
+    assert set(first.get(MODELS)) == {DS_KEY, SDS_KEY}  # the old team's entry is the user's to remove
+
+
+def test_a_users_own_model_entries_are_left_alone():
+    original = '{"provider": {"amazon-bedrock": {"models": {"my-model": {"id": "arn:x", "name": "Mine"}}}}}\n'
+
+    document = applied_for("ds", original)
+
+    assert document.get((*MODELS, "my-model")) == {"id": "arn:x", "name": "Mine"}
+    assert DS_KEY in document.get(MODELS)
+
+
+def test_an_entry_edited_by_hand_is_shown_as_a_change_to_its_settings():
+    document = applied_for("ds")
+    document.set((*MODELS, DS_KEY, "limit", "context"), 200_000)
+
+    result = plan_changes(document, STORE, STORE_VALUE, desired_config("ds"))
+
+    [change] = [c for c in result.changes if c.path == (*MODELS, DS_KEY)]
+    assert change.kind is ChangeKind.CHANGE
+    assert describe(change) == ("change", f"provider.amazon-bedrock.models.{DS_KEY}", "settings updated")
+
+
+def test_a_profile_replaced_in_aws_is_shown_as_its_id_changing():
+    """Changing the model behind a profile gives it a new id; the next idea-oc release carries the new one."""
+    document = applied_for("ds")
+    old_arn = desired_config("ds")["provider"]["amazon-bedrock"]["models"][DS_KEY]["id"].replace(
+        "4niqtfvd2b0y", "oldoldold123"
+    )
+    document.set((*MODELS, DS_KEY, "id"), old_arn)
+
+    result = plan_changes(document, STORE, STORE_VALUE, desired_config("ds"))
+
+    [change] = [c for c in result.changes if c.path == (*MODELS, DS_KEY)]
+    assert describe(change)[2] == "inference profile oldoldold123 -> inference profile 4niqtfvd2b0y"
+
+
+def test_describe_summarises_a_new_profile_by_its_id():
+    change = by_path(plan_for("econ").changes)[(*MODELS, "anthropic-claude-sonnet-5-5-econ")]
+
+    assert describe(change) == (
+        "add",
+        "provider.amazon-bedrock.models.anthropic-claude-sonnet-5-5-econ",
+        "inference profile sbs7oxfolxbz",
+    )
+
+
+def test_comments_survive_adding_a_profile_to_a_commented_config():
+    original = (
+        "{\n"
+        "  // mine\n"
+        '  "provider": {\n'
+        '    "amazon-bedrock": {\n'
+        '      "options": {"region": "eu-west-2"} // keep\n'
+        "    }\n"
+        "  }\n"
+        "}\n"
+    )
+
+    document = applied_for("ds", original)
+
+    assert "// mine" in document.text and "// keep" in document.text
+    assert document.get((*MODELS, DS_KEY, "limit", "output")) == 128_000
+
+
+def test_the_default_plan_is_for_the_default_team():
+    result = plan_changes(JsoncDocument.parse("{}\n"), STORE, STORE_VALUE)
+
+    assert by_path(result.changes)[("model",)].new == f"amazon-bedrock/{DS_KEY}"

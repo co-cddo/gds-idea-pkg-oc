@@ -6,6 +6,7 @@ Check your setup against what the team expects, without changing anything.
 idea-oc status            # both stages
 idea-oc status skills
 idea-oc status config
+idea-oc status config --team sds   # compare against another team's profile
 idea-oc status --quiet    # print only problems
 ```
 

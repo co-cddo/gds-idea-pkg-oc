@@ -11,6 +11,7 @@ from idea_oc.github import GitHubClient, GitHubError, TreeEntry
 from idea_oc.models import Registry
 from idea_oc.opencode_config import ConfigError, plan_config
 from idea_oc.planner import SKILL_FILE, PlanError, PlannedSkill, frontmatter_name, plan_source
+from idea_oc.profiles import TeamChoice
 from idea_oc.store import SkillDiff, Store
 from idea_oc.sync import SourcePlan, plan_registry
 from idea_oc.team_config import Change
@@ -108,6 +109,7 @@ class ConfigReport:
         notes: Things that were left alone and why.
         exists: Whether the config file exists.
         error: Why the config could not be read, if it could not.
+        team: Which team's inference profile the config was compared against, and why.
     """
 
     changes: list[Change] = field(default_factory=list)
@@ -115,6 +117,7 @@ class ConfigReport:
     notes: list[str] = field(default_factory=list)
     exists: bool = True
     error: str | None = None
+    team: TeamChoice | None = None
 
     @property
     def problems(self) -> bool:
@@ -221,11 +224,11 @@ def check_skills(
     )
 
 
-def check_config(config_path: Path, store_dir: Path) -> ConfigReport:
+def check_config(config_path: Path, store_dir: Path, team: str | None = None) -> ConfigReport:
     """Compare the OpenCode config with the team's preferred config. Works offline."""
     try:
-        config = plan_config(config_path, store_dir)
+        config = plan_config(config_path, store_dir, team)
     except ConfigError as e:
         return ConfigReport(error=str(e))
     plan = config.plan
-    return ConfigReport(plan.changes, plan.warnings, plan.notes, config.exists)
+    return ConfigReport(plan.changes, plan.warnings, plan.notes, config.exists, team=config.team)
