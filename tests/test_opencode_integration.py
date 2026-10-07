@@ -71,12 +71,15 @@ def resolve_models(tmp_path, models: dict) -> dict[str, dict]:
     return resolved
 
 
-def behaviour(model: dict) -> dict:
-    """The parts of a resolved model that change how OpenCode talks to it."""
+def resolved_settings(model: dict) -> dict:
+    """The parts of a resolved model that are plain facts about it, and so must match the catalogue model.
+
+    Reasoning is left out on purpose: the profile entry sets ``reasoning`` to false and carries its own
+    variants (see ``Profiles.model_entry``), and what is actually *sent* is checked in ``test_opencode_wire``.
+    """
     caps = model["capabilities"]
     return {
         "limit": model["limit"],
-        "reasoning": caps["reasoning"],
         "toolcall": caps["toolcall"],
         "attachment": caps["attachment"],
         "temperature": caps["temperature"],
@@ -84,20 +87,27 @@ def behaviour(model: dict) -> dict:
         "output": caps["output"],
         "cost": model["cost"],
         "family": model["family"],
-        "variants": model["variants"],
     }
 
 
 @pytest.mark.parametrize("team", sorted(load_profiles().teams))
-def test_a_profile_entry_behaves_exactly_like_the_model_it_routes_to(tmp_path, team):
+def test_a_profile_entry_has_the_same_limits_modalities_and_cost_as_the_model_it_routes_to(tmp_path, team):
     profiles = load_profiles()
     models = resolve_models(tmp_path, {profiles.model_key(team): profiles.model_entry(team)})
 
     ours = models[profiles.model_ref(team)]
-    catalogue = models[CATALOGUE_MODEL]
 
-    assert behaviour(ours) == behaviour(catalogue)
+    assert resolved_settings(ours) == resolved_settings(models[CATALOGUE_MODEL])
     assert ours["api"]["id"] == profiles.arn(team)  # ... but requests go through the profile
+
+
+def test_the_profile_offers_the_same_reasoning_levels_as_the_model(tmp_path):
+    profiles = load_profiles()
+    models = resolve_models(tmp_path, {profiles.model_key("ds"): profiles.model_entry("ds")})
+
+    ours, catalogue = models[profiles.model_ref("ds")], models[CATALOGUE_MODEL]
+
+    assert list(ours["variants"]) == list(catalogue["variants"])
 
 
 def test_a_bare_arn_would_not_behave_like_the_model(tmp_path):

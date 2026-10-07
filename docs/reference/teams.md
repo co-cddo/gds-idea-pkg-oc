@@ -53,10 +53,9 @@ change  model                                                          amazon-be
 ```
 
 - **The profile entry** holds the profile's ARN and the model's settings. The settings have to be
-  written out, because OpenCode works out what a model can do from its id, and an ARN does not say
-  which model is behind it. Without them OpenCode would think the model has no context window and no
-  reasoning, and would use the wrong thinking settings. The restated settings make the profile behave
-  exactly like the model it routes to.
+  written out, because OpenCode and the AI SDK work out what a model is from its id, and an ARN does
+  not say which model is behind it. Without them OpenCode would think the model has no context window,
+  no image input and zero cost. They are copied from the model the profile routes to (Sonnet 5.5).
 - **`model`** points at it.
 
 `small_model` is deliberately left alone. OpenCode uses a small, cheap model for background jobs such
@@ -67,6 +66,27 @@ The entry's key must contain `claude` and `anthropic`: OpenCode decides whether 
 the key, and without caching your usage and cost go up.
 
 Your own entries under `provider.amazon-bedrock.models` are never touched, and nor are other teams'.
+
+## Reasoning levels
+
+Reasoning is the one place where a profile needs special handling, and getting it wrong breaks the model
+rather than just degrading it.
+
+The AI SDK decides how to ask a Bedrock model to think from its id. For a Claude model it sends the
+Claude fields (`thinking` and `output_config`). For an ARN it cannot tell, assumes an Amazon Nova model
+and sends `reasoningConfig`, which Bedrock rejects for Claude with `reasoningConfig: Extra inputs are
+not permitted`. **Every reasoning level then fails**, though plain use without one still works. This
+was found by trying it, and `modelFamily` and similar settings did not help in OpenCode 1.18.1 or
+1.18.35.
+
+So the entry sets `reasoning: false`, which stops OpenCode generating its own levels, and offers the
+levels itself as raw request fields in the format Claude expects. They appear in OpenCode's variant
+picker as usual (`low`, `medium`, `high`, `xhigh`, `max`) and what is sent matches what OpenCode sends
+for the model directly. A side effect is that the desktop app's model tooltip says the model has no
+reasoning, which is not true.
+
+`tests/test_opencode_wire.py` points the real OpenCode at a local server and compares the requests, so
+if a future OpenCode or AI SDK changes this, the test says so and the workaround can be removed.
 
 ## The prompt file
 

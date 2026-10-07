@@ -15,7 +15,8 @@ econ = "sbs7oxfolxbz"
 
 # OpenCode learns what a model can do from its id. An ARN has no model name in it, so OpenCode would
 # treat a profile as a model with no context window, no reasoning and no image input. These values
-# restate what the catalogue says about the model the profiles route to (Sonnet 5.5).
+# restate what the catalogue says about the model the profiles route to (Sonnet 5.5). The reasoning levels
+# (`efforts`) are written out as raw Claude request fields rather than left to OpenCode: see model_entry().
 [model]
 key = "anthropic-claude-sonnet-5-5"   # must contain "claude" and "anthropic": OpenCode only turns on prompt caching for those
 name = "Claude Sonnet 5.5"
@@ -25,7 +26,6 @@ context = 1000000
 output = 128000
 input_modalities = ["text", "image", "pdf"]
 output_modalities = ["text"]
-reasoning = true
 tool_call = true
 attachment = true
 temperature = false

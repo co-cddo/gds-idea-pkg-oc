@@ -53,7 +53,6 @@ class ModelSpec(BaseModel):
     output: int = Field(gt=0)
     input_modalities: list[str]
     output_modalities: list[str]
-    reasoning: bool
     tool_call: bool
     attachment: bool
     temperature: bool
@@ -126,7 +125,20 @@ class Profiles(BaseModel):
         return f"{PROVIDER}/{self.model_key(team)}"
 
     def model_entry(self, team: str) -> dict[str, Any]:
-        """The ``provider.amazon-bedrock.models`` entry for ``team``, in OpenCode's config shape."""
+        """The ``provider.amazon-bedrock.models`` entry for ``team``, in OpenCode's config shape.
+
+        Reasoning needs care. The AI SDK works out whether a Bedrock model is Claude from its id, and an
+        ARN says nothing, so for a profile it treats the model as Amazon Nova and sends the reasoning level
+        as ``reasoningConfig``. Bedrock rejects that for Claude ("reasoningConfig: Extra inputs are not
+        permitted"), so every reasoning level fails. Two things avoid it:
+
+        - ``reasoning`` is false, so OpenCode generates no variants of its own, and
+        - the variants are written out here as raw request fields, in the format Claude expects. They are
+          sent as they are, and match what OpenCode sends for the model directly.
+
+        The variants still appear in OpenCode's picker. The one visible side effect is that the desktop
+        app's model tooltip says the model has no reasoning.
+        """
         spec = self.model
         thinking = {"type": "adaptive", "display": "summarized"}
         return {
@@ -134,7 +146,7 @@ class Profiles(BaseModel):
             "name": f"{spec.name} ({team})",
             "family": spec.family,
             "release_date": spec.release_date,
-            "reasoning": spec.reasoning,
+            "reasoning": False,
             "tool_call": spec.tool_call,
             "attachment": spec.attachment,
             "temperature": spec.temperature,
@@ -142,7 +154,10 @@ class Profiles(BaseModel):
             "limit": {"context": spec.context, "output": spec.output},
             "cost": spec.cost.model_dump(),
             "variants": {
-                effort: {"reasoningConfig": {**thinking, "maxReasoningEffort": effort}} for effort in spec.efforts
+                effort: {
+                    "additionalModelRequestFields": {"thinking": dict(thinking), "output_config": {"effort": effort}}
+                }
+                for effort in spec.efforts
             },
         }
 

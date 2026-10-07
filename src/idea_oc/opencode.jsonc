@@ -23,7 +23,9 @@
           "name": "Claude Sonnet 5.5 (ds)",
           "family": "claude-sonnet",
           "release_date": "2026-09-28",
-          "reasoning": true,
+          //false on purpose: with true OpenCode adds Amazon Nova style reasoning settings that Bedrock rejects for Claude.
+          //The levels below are still offered, written as the raw fields Claude expects.
+          "reasoning": false,
           "tool_call": true,
           "attachment": true,
           "temperature": false,
@@ -31,11 +33,11 @@
           "limit": { "context": 1000000, "output": 128000 },
           "cost": { "input": 2.2, "output": 11.0, "cache_read": 0.22, "cache_write": 2.75 },
           "variants": {
-            "low": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "low" } },
-            "medium": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "medium" } },
-            "high": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "high" } },
-            "xhigh": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "xhigh" } },
-            "max": { "reasoningConfig": { "type": "adaptive", "display": "summarized", "maxReasoningEffort": "max" } }
+            "low": { "additionalModelRequestFields": { "thinking": { "type": "adaptive", "display": "summarized" }, "output_config": { "effort": "low" } } },
+            "medium": { "additionalModelRequestFields": { "thinking": { "type": "adaptive", "display": "summarized" }, "output_config": { "effort": "medium" } } },
+            "high": { "additionalModelRequestFields": { "thinking": { "type": "adaptive", "display": "summarized" }, "output_config": { "effort": "high" } } },
+            "xhigh": { "additionalModelRequestFields": { "thinking": { "type": "adaptive", "display": "summarized" }, "output_config": { "effort": "xhigh" } } },
+            "max": { "additionalModelRequestFields": { "thinking": { "type": "adaptive", "display": "summarized" }, "output_config": { "effort": "max" } } }
           }
         }
       }

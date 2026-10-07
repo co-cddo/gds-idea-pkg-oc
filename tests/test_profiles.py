@@ -61,12 +61,7 @@ def test_the_entry_points_at_the_profile_and_restates_what_the_arn_cannot_say(pr
 
     assert entry["id"] == profiles.arn("econ")
     assert entry["limit"] == {"context": 1_000_000, "output": 128_000}
-    assert (entry["reasoning"], entry["tool_call"], entry["attachment"], entry["temperature"]) == (
-        True,
-        True,
-        True,
-        False,
-    )
+    assert (entry["tool_call"], entry["attachment"], entry["temperature"]) == (True, True, False)
     assert entry["modalities"] == {"input": ["text", "image", "pdf"], "output": ["text"]}
     assert entry["cost"] == {"input": 2.2, "output": 11.0, "cache_read": 0.22, "cache_write": 2.75}
 
@@ -75,15 +70,27 @@ def test_the_entry_names_the_team_so_it_shows_in_opencodes_model_list(profiles):
     assert profiles.model_entry("sds")["name"] == "Claude Sonnet 5.5 (sds)"
 
 
-def test_thinking_variants_are_adaptive_for_every_effort_level(profiles):
-    """Without these OpenCode applies the settings meant for Amazon Nova, because an ARN has no model name."""
+def test_reasoning_is_switched_off_so_opencode_adds_no_reasoning_settings_of_its_own(profiles):
+    """With it on, OpenCode treats an ARN as an Amazon Nova model and adds ``reasoningConfig``, which Bedrock
+    rejects for Claude ("Extra inputs are not permitted"), so every reasoning level fails."""
+    assert profiles.model_entry("ds")["reasoning"] is False
+
+
+def test_every_reasoning_level_is_offered_as_raw_claude_request_fields(profiles):
     variants = profiles.model_entry("ds")["variants"]
 
     assert list(variants) == ["low", "medium", "high", "xhigh", "max"]
     for effort, variant in variants.items():
         assert variant == {
-            "reasoningConfig": {"type": "adaptive", "display": "summarized", "maxReasoningEffort": effort}
+            "additionalModelRequestFields": {
+                "thinking": {"type": "adaptive", "display": "summarized"},
+                "output_config": {"effort": effort},
+            }
         }
+
+
+def test_no_variant_carries_the_amazon_nova_field_bedrock_rejects_for_claude(profiles):
+    assert "reasoningConfig" not in str(profiles.model_entry("ds")["variants"])
 
 
 def test_the_entry_is_independent_between_calls(profiles):
